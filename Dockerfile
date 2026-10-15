@@ -29,6 +29,9 @@ ENV HOSTNAME=0.0.0.0
 
 RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001
 
+# worker（音源変換）用
+RUN apk add --no-cache ffmpeg
+
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public

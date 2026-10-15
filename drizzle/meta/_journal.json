@@ -8,6 +8,13 @@
       "when": 1792032412677,
       "tag": "0000_known_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792058292739,
+      "tag": "0001_salty_cammi",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,20 @@ http://{$APP_DOMAIN} {
 }
 
 # S3互換ストレージ（presigned URL の配信先。Range リクエスト対応）
+# ブラウザからの presigned PUT 用に CORS を付与（署名検証はGarageが行う）
 http://{$MEDIA_DOMAIN} {
 	encode zstd gzip
+
+	@preflight method OPTIONS
+	handle @preflight {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, PUT, HEAD, POST, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "*"
+		header Access-Control-Max-Age "3600"
+		respond 204
+	}
+
+	header Access-Control-Allow-Origin "*"
+	header Access-Control-Expose-Headers "ETag"
 	reverse_proxy garage:3900
 }

@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { ListMusic, UploadCloud } from "lucide-react";
+import Link from "next/link";
+import { desc, eq } from "drizzle-orm";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { TrackList, type LibraryTrack } from "@/components/library/track-list";
+import { buttonVariants } from "@/components/ui/button";
+import { db } from "@/db";
+import { tracks } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "ライブラリ" };
 export const dynamic = "force-dynamic";
@@ -15,6 +21,38 @@ export default async function LibraryPage() {
 
   const { user } = session;
 
+  const rows = await db
+    .select({
+      id: tracks.id,
+      title: tracks.title,
+      artist: tracks.artist,
+      album: tracks.album,
+      genre: tracks.genre,
+      durationSec: tracks.durationSec,
+      status: tracks.status,
+      visibility: tracks.visibility,
+      playCount: tracks.playCount,
+      transcodeError: tracks.transcodeError,
+      artworkKey: tracks.artworkKey,
+    })
+    .from(tracks)
+    .where(eq(tracks.ownerId, user.id))
+    .orderBy(desc(tracks.createdAt));
+
+  const libraryTracks: LibraryTrack[] = rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    album: row.album,
+    genre: row.genre,
+    durationSec: row.durationSec,
+    status: row.status,
+    visibility: row.visibility,
+    playCount: row.playCount,
+    transcodeError: row.transcodeError,
+    hasArtwork: Boolean(row.artworkKey),
+  }));
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
       <header className="flex items-center justify-between py-6">
@@ -22,30 +60,20 @@ export default async function LibraryPage() {
           DOPA<span className="text-accent">-radio</span>
         </span>
         <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-400">{user.name}</span>
+          <span className="hidden text-xs text-zinc-400 sm:inline">{user.name}</span>
+          <Link href="/upload" className={cn(buttonVariants({ size: "sm" }))}>
+            アップロード
+          </Link>
           <SignOutButton />
         </div>
       </header>
 
-      <section className="py-10">
-        <h1 className="mb-2 text-2xl font-black">ようこそ、{user.name} さん</h1>
-        <p className="text-sm text-zinc-400">
-          フェーズ0が完了しました。ここからアップロードとプレイリスト機能を載せていきます。
-        </p>
+      <section className="pb-6">
+        <h1 className="mb-1 text-2xl font-black">ライブラリ</h1>
+        <p className="text-sm text-zinc-400">自分の曲を管理して、そのまま再生できます。</p>
       </section>
 
-      <section className="grid gap-4 pb-16 sm:grid-cols-2">
-        <div className="rounded-2xl border border-dashed border-dopa-700 bg-dopa-900/60 p-6">
-          <UploadCloud className="mb-3 size-6 text-zinc-500" aria-hidden />
-          <h2 className="mb-1 font-bold text-zinc-300">アップロード</h2>
-          <p className="text-xs text-zinc-500">フェーズ1で実装（HLS変換・権利確認つき）</p>
-        </div>
-        <div className="rounded-2xl border border-dashed border-dopa-700 bg-dopa-900/60 p-6">
-          <ListMusic className="mb-3 size-6 text-zinc-500" aria-hidden />
-          <h2 className="mb-1 font-bold text-zinc-300">プレイリスト</h2>
-          <p className="text-xs text-zinc-500">フェーズ2で実装（公開・共有・並び替え）</p>
-        </div>
-      </section>
+      <TrackList tracks={libraryTracks} />
     </main>
   );
 }

@@ -1,6 +1,7 @@
 import { PgBoss, type Job } from "pg-boss";
 
 import { databaseUrl } from "../src/db";
+import { transcodeTrack } from "./handlers/transcode";
 
 const QUEUES = ["transcode"] as const;
 
@@ -18,12 +19,18 @@ async function main() {
     await boss.createQueue(queue);
   }
 
-  await boss.work("transcode", async (jobs: Job[]) => {
-    for (const job of jobs) {
-      console.log(`[worker] transcode job received: ${job.id}`);
-      /* フェーズ1で実装: ffmpeg AAC/HLS変換・ジャケット抽出 */
-    }
-  });
+  await boss.work(
+    "transcode",
+    { batchSize: 1, pollingIntervalSeconds: 2 },
+    async (jobs: Job<{ trackId: string }>[]) => {
+      for (const job of jobs) {
+        const { trackId } = job.data;
+        console.log(`[worker] transcode start: ${trackId}`);
+        await transcodeTrack(trackId);
+        console.log(`[worker] transcode done: ${trackId}`);
+      }
+    },
+  );
 
   console.log(`[worker] listening on queues: ${QUEUES.join(", ")}`);
 }

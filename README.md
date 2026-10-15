@@ -66,7 +66,7 @@ docker compose up -d postgres garage
 ## ロードマップ
 
 - [x] フェーズ0: 基盤（認証・PWA・インフラ）
-- [ ] フェーズ1: アップロード + ffmpeg → AAC/HLS 変換
+- [x] フェーズ1: アップロード + ffmpeg → AAC/HLS 変換 + 倍速プレイヤー
 - [ ] フェーズ2: プレイリスト + 共有（OG 画像）
 - [ ] フェーズ3: Apple Music / Spotify 連携（ハンドオフ）
 - [ ] フェーズ4: ドパモード（無限自動再生）+ 通報 / 管理

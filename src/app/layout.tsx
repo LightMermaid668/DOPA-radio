@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { PlayerBar } from "@/components/player/player-bar";
 import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
 
@@ -40,6 +41,7 @@ export default function RootLayout({
     <html lang="ja">
       <body>
         {children}
+        <PlayerBar />
         <PwaRegister />
       </body>
     </html>
