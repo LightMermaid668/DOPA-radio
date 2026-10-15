@@ -8,6 +8,14 @@ BRANCH="${BRANCH:-prod}"
 
 cd "$APP_DIR"
 
+# ファイルシステムの書き込み可否チェック（ディスクI/Oエラーの早期検知）
+if ! touch .deploy.write-test 2>/dev/null; then
+  echo "[deploy] エラー: ファイルシステムが読み取り専用です（ディスクI/Oエラーの可能性）" >&2
+  echo "[deploy] Proxmoxホストで dmesg / smartctl を確認し、LXCを停止→fsck→再起動してください" >&2
+  exit 1
+fi
+rm -f .deploy.write-test
+
 # 排他制御（多重起動防止）
 exec 9>".deploy.lock"
 if ! flock -n 9; then
@@ -51,6 +59,14 @@ if [ ! -f garage.toml ]; then
       garage.toml.example >garage.toml
   chmod 600 garage.toml
 fi
+
+# 破損ファイルの復旧（読み取り専用中に中断されたデプロイの痕跡）
+for file in package.json package-lock.json; do
+  if [ ! -s "$file" ]; then
+    echo "[deploy] $file が破損しています。gitから復元します"
+    git checkout -- "$file"
+  fi
+done
 
 echo "[deploy] docker compose を再ビルドして起動します..."
 docker compose up -d --build --remove-orphans
