@@ -18,7 +18,13 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { applyPlaybackSettings, getAudio, maxPlaybackRate } from "@/lib/player-audio";
+import {
+  applyPlaybackSettings,
+  fadeAudioVolume,
+  getAudio,
+  maxPlaybackRate,
+  resetAudioVolume,
+} from "@/lib/player-audio";
 import { ensureCaptureAnalyser, eqGraphReady, getBassEnergy } from "@/lib/eq";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
@@ -49,6 +55,7 @@ export function PlayerBar() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chorusGuardRef = useRef<string | null>(null);
+  const fadeOutKeyRef = useRef<string | null>(null);
   const soundPopoverRef = useRef<HTMLDivElement>(null);
   const speedPopoverRef = useRef<HTMLDivElement>(null);
   const [panel, setPanel] = useState<"speed" | "sound" | null>(null);
@@ -122,23 +129,38 @@ export function PlayerBar() {
     const handleTime = () => {
       const state = usePlayer.getState();
       const current = state.queue[state.index];
-      // サビだけモード: サビ終端に達したら次の曲へ
+
       if (
         state.chorusOnly &&
-        state.isPlaying &&
-        !audio.paused &&
         current?.kind === "upload" &&
         current.chorusEndSec != null &&
-        current.chorusEndSec - (current.chorusStartSec ?? 0) >= 5 &&
-        audio.currentTime >= current.chorusEndSec - 0.08
+        current.chorusEndSec - (current.chorusStartSec ?? 0) >= 5
       ) {
         const key = `${current.id}:${state.index}:${state.queue.length}`;
-        if (chorusGuardRef.current !== key) {
-          chorusGuardRef.current = key;
-          state.next();
-          return;
+        const remaining = current.chorusEndSec - audio.currentTime;
+
+        // サビ終端の0.85秒前からフェードアウト
+        if (state.isPlaying && !audio.paused && remaining <= 0.85 && remaining > 0.05) {
+          if (fadeOutKeyRef.current !== key) {
+            fadeOutKeyRef.current = key;
+            void fadeAudioVolume(0, Math.max(150, (remaining - 0.05) * 1000));
+          }
+        } else if (remaining > 1.2 && fadeOutKeyRef.current === key) {
+          // 巻き戻した場合はフェードをやり直せるよう音量を戻す
+          fadeOutKeyRef.current = null;
+          resetAudioVolume();
+        }
+
+        // サビ終端に達したら次の曲へ（次の曲はフェードインで開始）
+        if (state.isPlaying && !audio.paused && remaining <= 0.08) {
+          if (chorusGuardRef.current !== key) {
+            chorusGuardRef.current = key;
+            state.next();
+            return;
+          }
         }
       }
+
       usePlayer.setState({ progress: audio.currentTime, duration: audio.duration || 0 });
     };
     const handlePlay = () => {

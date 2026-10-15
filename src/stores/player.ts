@@ -14,6 +14,8 @@ import {
   getAudio,
   isIos,
   maxPlaybackRate,
+  prepareFadeIn,
+  resetAudioVolume,
   trackSrc,
 } from "@/lib/player-audio";
 
@@ -146,6 +148,7 @@ function startTrackWithPitch(
   semitones: number,
   position: number,
   play: boolean,
+  fade: { fadeIn: boolean; resetVolume: boolean },
 ) {
   void (async () => {
     const audio = getAudio();
@@ -175,6 +178,11 @@ function startTrackWithPitch(
         audio.currentTime = position;
       };
       audio.addEventListener("loadedmetadata", restore);
+    }
+    if (fade.fadeIn) {
+      prepareFadeIn(audio);
+    } else if (fade.resetVolume) {
+      resetAudioVolume();
     }
     if (play) {
       playWithRetry(audio, 0);
@@ -215,8 +223,23 @@ function startTrack(
       : null;
   const effectivePosition = position > 3 ? position : (chorusStart ?? position);
 
+  // サビメドレー: 頭出し時はフェードイン、サビ無し曲は音量を必ず戻す
+  const chorusPlay = chorusStart != null;
+  const fade = {
+    fadeIn: chorusPlay && play && position <= 3,
+    resetVolume: !chorusPlay,
+  };
+
   if (effectivePitch !== 0) {
-    startTrackWithPitch(track, rate, preservesPitch, effectivePitch, effectivePosition, play);
+    startTrackWithPitch(
+      track,
+      rate,
+      preservesPitch,
+      effectivePitch,
+      effectivePosition,
+      play,
+      fade,
+    );
     return;
   }
 
@@ -251,6 +274,11 @@ function startTrack(
       audio.currentTime = effectivePosition;
     };
     audio.addEventListener("loadedmetadata", restore);
+  }
+  if (fade.fadeIn) {
+    prepareFadeIn(audio);
+  } else if (fade.resetVolume) {
+    resetAudioVolume();
   }
   if (play) {
     playWithRetry(audio, 0);
@@ -561,6 +589,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   setChorusOnly: (value) => {
     persist(CHORUS_ONLY_KEY, String(value));
     set({ chorusOnly: value });
+    if (!value) {
+      resetAudioVolume();
+    }
   },
 
   setEqEnabled: (value) => {

@@ -56,3 +56,55 @@ export function applyPlaybackSettings(target: HTMLAudioElement, settings: Playba
   const legacy = target as HTMLAudioElement & { webkitPreservesPitch?: boolean };
   legacy.webkitPreservesPitch = settings.preservesPitch;
 }
+
+/* ---- 音量フェード（サビメドレーのフェードイン/アウト用） ---- */
+
+let fadeTimer: number | null = null;
+
+export function cancelVolumeFade() {
+  if (fadeTimer !== null) {
+    window.clearInterval(fadeTimer);
+    fadeTimer = null;
+  }
+}
+
+/** 現在音量から target（0〜1）へ durationMs かけてランプする */
+export function fadeAudioVolume(target: number, durationMs: number): Promise<void> {
+  const audio = getAudio();
+  if (!audio) return Promise.resolve();
+  cancelVolumeFade();
+
+  const startVolume = audio.volume;
+  const to = Math.max(0, Math.min(1, target));
+  const startedAt = performance.now();
+
+  return new Promise((resolve) => {
+    const step = () => {
+      const progress = Math.min(1, (performance.now() - startedAt) / Math.max(1, durationMs));
+      audio.volume = startVolume + (to - startVolume) * progress;
+      if (progress >= 1) {
+        cancelVolumeFade();
+        resolve();
+      }
+    };
+    fadeTimer = window.setInterval(step, 30);
+  });
+}
+
+/** フェードを中断して音量を1に戻す */
+export function resetAudioVolume() {
+  cancelVolumeFade();
+  const audio = getAudio();
+  if (audio) audio.volume = 1;
+}
+
+/** 音量0から再生開始時にフェードインする（playingイベントで開始） */
+export function prepareFadeIn(audio: HTMLAudioElement, durationMs = 800) {
+  cancelVolumeFade();
+  audio.volume = 0;
+  const onPlaying = () => {
+    audio.removeEventListener("playing", onPlaying);
+    void fadeAudioVolume(1, durationMs);
+  };
+  audio.addEventListener("playing", onPlaying);
+}
