@@ -40,6 +40,7 @@ export default async function PlaylistPage({
       itemId: playlistItems.id,
       kind: playlistItems.kind,
       trackId: playlistItems.trackId,
+      ownerId: tracks.ownerId,
       externalMeta: playlistItems.externalMeta,
       title: tracks.title,
       artist: tracks.artist,
@@ -56,6 +57,7 @@ export default async function PlaylistPage({
     itemId: row.itemId,
     kind: row.kind,
     trackId: row.trackId,
+    ownerId: row.ownerId,
     title: row.title ?? row.externalMeta?.title ?? null,
     artist: row.artist ?? row.externalMeta?.artist ?? null,
     durationSec:
@@ -91,7 +93,7 @@ export default async function PlaylistPage({
         <SignOutButton />
       </header>
 
-      <PlaylistDetail data={data} />
+      <PlaylistDetail data={data} currentUserId={session.user.id} />
     </main>
   );
 }

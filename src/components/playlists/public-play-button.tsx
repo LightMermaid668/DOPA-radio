@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogIn, Play } from "lucide-react";
+import { LogIn, Play, Shuffle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
@@ -33,17 +33,33 @@ export function PublicPlayButton({
   }
 
   return (
-    <Button
-      type="button"
-      size="lg"
-      disabled={tracks.length === 0}
-      onClick={() => {
-        if (tracks.length === 0) return;
-        usePlayer.getState().playQueue(tracks, 0);
-      }}
-    >
-      <Play className="size-4" />
-      再生
-    </Button>
+    <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        size="lg"
+        disabled={tracks.length === 0}
+        onClick={() => {
+          if (tracks.length === 0) return;
+          usePlayer.getState().playQueue(tracks, 0);
+        }}
+      >
+        <Play className="size-4" />
+        再生
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="lg"
+        disabled={tracks.length === 0}
+        onClick={() => {
+          if (tracks.length === 0) return;
+          usePlayer.getState().playQueueShuffled(tracks);
+        }}
+        aria-label="シャッフル再生"
+      >
+        <Shuffle className="size-4" />
+        シャッフル
+      </Button>
+    </div>
   );
 }

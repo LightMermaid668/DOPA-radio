@@ -2,15 +2,35 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { Gauge, Loader2, Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import {
+  Gauge,
+  ListMusic,
+  Loader2,
+  Pause,
+  Play,
+  Radio,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { applyPlaybackSettings, getAudio, maxPlaybackRate } from "@/lib/player-audio";
+import { getBassEnergy } from "@/lib/eq";
 import { cn } from "@/lib/utils";
-import { handleAudioError, usePlayer } from "@/stores/player";
+import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
 const PITCH_OPTIONS = Array.from({ length: 25 }, (_, index) => index - 12);
+
+const EQ_PRESET_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: "flat", label: "フラット" },
+  { key: "dopa", label: "ドパドパ" },
+  { key: "mild", label: "低音マイルド" },
+  { key: "clear", label: "クリア" },
+];
 
 function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "0:00";
@@ -19,9 +39,16 @@ function formatTime(sec: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function formatBoostDb(level: number): string {
+  if (level <= 1.001) return "±0dB";
+  return `+${(20 * Math.log10(level)).toFixed(1)}dB`;
+}
+
 export function PlayerBar() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [speedOpen, setSpeedOpen] = useState(false);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const [panel, setPanel] = useState<"speed" | "sound" | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   const queue = usePlayer((s) => s.queue);
   const index = usePlayer((s) => s.index);
@@ -30,21 +57,34 @@ export function PlayerBar() {
   const duration = usePlayer((s) => s.duration);
   const rate = usePlayer((s) => s.rate);
   const preservesPitch = usePlayer((s) => s.preservesPitch);
+  const pitchSemitones = usePlayer((s) => s.pitchSemitones);
+  const playbackError = usePlayer((s) => s.playbackError);
+  const playbackNotice = usePlayer((s) => s.playbackNotice);
+  const dopaMode = usePlayer((s) => s.dopaMode);
+  const eqEnabled = usePlayer((s) => s.eqEnabled);
+  const eqPreset = usePlayer((s) => s.eqPreset);
+  const eqBass = usePlayer((s) => s.eqBass);
+  const eqMid = usePlayer((s) => s.eqMid);
+  const eqTreble = usePlayer((s) => s.eqTreble);
+  const boostLevel = usePlayer((s) => s.boostLevel);
   const togglePlay = usePlayer((s) => s.togglePlay);
   const next = usePlayer((s) => s.next);
   const prev = usePlayer((s) => s.prev);
   const seekTo = usePlayer((s) => s.seekTo);
   const setRate = usePlayer((s) => s.setRate);
   const setPreservesPitch = usePlayer((s) => s.setPreservesPitch);
-  const hydrateSettings = usePlayer((s) => s.hydrateSettings);
-  const playbackError = usePlayer((s) => s.playbackError);
-  const playbackNotice = usePlayer((s) => s.playbackNotice);
-  const pitchSemitones = usePlayer((s) => s.pitchSemitones);
   const setPitchSemitones = usePlayer((s) => s.setPitchSemitones);
+  const setDopaMode = usePlayer((s) => s.setDopaMode);
+  const setEqEnabled = usePlayer((s) => s.setEqEnabled);
+  const applyEqPreset = usePlayer((s) => s.applyEqPreset);
+  const setEqBand = usePlayer((s) => s.setEqBand);
+  const setBoostLevel = usePlayer((s) => s.setBoostLevel);
+  const hydrateSettings = usePlayer((s) => s.hydrateSettings);
   const retryCurrent = usePlayer((s) => s.retryCurrent);
 
   const track = queue[index] ?? null;
   const maxRate = maxPlaybackRate();
+  const soundActive = eqEnabled || boostLevel > 1.001;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -62,7 +102,6 @@ export function PlayerBar() {
     const handleTime = () =>
       usePlayer.setState({ progress: audio.currentTime, duration: audio.duration || 0 });
     const handlePlay = () => {
-      // Safari が src 切替時に再生速度/ピッチをリセットする場合があるため再適用
       applyPlaybackSettings(audio, {
         rate: usePlayer.getState().rate,
         preservesPitch: usePlayer.getState().preservesPitch,
@@ -95,6 +134,53 @@ export function PlayerBar() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let raf = 0;
+    let smoothed = 0;
+
+    const loop = () => {
+      const el = lineRef.current;
+      if (el) {
+        const { isPlaying, rate } = usePlayer.getState();
+        const speed = rate || 1;
+        const t = performance.now() / 1000;
+
+        let target = 0;
+        if (isPlaying) {
+          const real = getBassEnergy();
+          if (real !== null) {
+            target = real;
+          } else {
+            target =
+              0.35 +
+              0.25 * Math.sin(t * speed * 2 * Math.PI * 1.6) +
+              0.2 * Math.sin(t * speed * 2 * Math.PI * 4.2 + 1.1) +
+              0.1 * Math.sin(t * speed * 2 * Math.PI * 9.0 + 0.4);
+            target = Math.max(0, Math.min(1, target));
+          }
+        }
+
+        smoothed += (target - smoothed) * 0.18;
+        el.style.transform = `scaleY(${(1 + smoothed * 2.4).toFixed(3)})`;
+        el.style.backgroundPositionX = `${((t * speed * 40) % 150).toFixed(2)}%`;
+        el.style.boxShadow =
+          smoothed > 0.08
+            ? `0 0 ${(4 + smoothed * 16).toFixed(1)}px rgba(232, 121, 249, ${(
+                0.2 +
+                smoothed * 0.5
+              ).toFixed(2)})`
+            : "none";
+      }
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  useEffect(() => {
     if (!track || typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
@@ -123,30 +209,41 @@ export function PlayerBar() {
     });
   }, [track]);
 
+  const hostDiv = (
+    <div
+      ref={containerRef}
+      aria-hidden
+      style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+    />
+  );
+
+  if (!track) {
+    return hostDiv;
+  }
+
   return (
     <>
-      {/* iOS Safari は display:none 内のメディアを読み込まないため、サイズ0の絶対配置で保持する */}
+      {hostDiv}
       <div
-        ref={containerRef}
         aria-hidden
-        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+        style={{ height: "calc(7rem + env(safe-area-inset-bottom))" }}
       />
-      {track ? (
-        <>
+      <div
+        className="animate-slide-up fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
+        style={{
+          paddingBottom: "env(safe-area-inset-bottom)",
+          viewTransitionName: "player-bar",
+        }}
+      >
+        <div className="h-1 w-full overflow-hidden" aria-hidden>
           <div
-            aria-hidden
-            style={{ height: "calc(7rem + env(safe-area-inset-bottom))" }}
+            ref={lineRef}
+            className="bg-rainbow h-full w-full origin-bottom"
+            style={{ backgroundSize: "300% 100%" }}
           />
-          <div
-            className="animate-slide-up fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
-            style={{
-              paddingBottom: "env(safe-area-inset-bottom)",
-              viewTransitionName: "player-bar",
-            }}
-          >
-            <div className="bg-rainbow h-0.5 w-full" aria-hidden />
-            <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
-          <div className="flex items-center gap-3">
+        </div>
+        <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
+          <div className="flex items-center gap-2">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">
               {track.artworkUrl ? (
                 <img
@@ -168,6 +265,9 @@ export function PlayerBar() {
                     {track.kind === "apple" && track.previewUrl ? "・試聴" : ""}
                   </span>
                 ) : null}
+                {dopaMode ? (
+                  <Radio className="size-3 shrink-0 text-accent" aria-label="ドパモードON" />
+                ) : null}
               </div>
               <p className="truncate text-xs text-zinc-400">
                 {track.artist ?? "アーティスト不明"}
@@ -187,7 +287,7 @@ export function PlayerBar() {
               </p>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={prev}
@@ -214,111 +314,238 @@ export function PlayerBar() {
               </button>
             </div>
 
-            <div className="relative shrink-0">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
-                onClick={() => setSpeedOpen((v) => !v)}
+                onClick={() => setQueueOpen(true)}
                 className={cn(
-                  "flex h-8 items-center gap-1 rounded-full border border-dopa-700 px-2.5 text-xs font-semibold",
-                  rate === 1 && pitchSemitones === 0
-                    ? "text-zinc-300"
-                    : "border-accent text-accent",
+                  "flex size-8 items-center justify-center rounded-full",
+                  dopaMode ? "text-accent" : "text-zinc-300 hover:bg-dopa-800",
                 )}
-                aria-label="再生速度"
+                aria-label="再生キュー"
               >
-                <Gauge className="size-3.5" />
-                {rate}x
+                <ListMusic className="size-4" />
               </button>
 
-              {speedOpen ? (
-                <div className="animate-pop absolute right-0 bottom-11 w-64 rounded-xl border border-dopa-700 bg-dopa-900 p-3 shadow-xl">
-                  <div className="px-1">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                      <span>速度</span>
-                      <span className="font-semibold text-accent">{rate}x</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0.5}
-                      max={maxRate}
-                      step={0.05}
-                      value={Math.min(rate, maxRate)}
-                      onChange={(e) => setRate(Number(e.target.value))}
-                      className="mt-1 w-full cursor-pointer accent-fuchsia-500"
-                      aria-label="再生速度スライダー"
-                    />
-                  </div>
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPanel((current) => (current === "sound" ? null : "sound"))}
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-full",
+                    soundActive ? "text-accent" : "text-zinc-300 hover:bg-dopa-800",
+                  )}
+                  aria-label="サウンド設定"
+                >
+                  <SlidersHorizontal className="size-4" />
+                </button>
 
-                  <div className="mt-2 grid grid-cols-4 gap-1">
-                    {RATE_OPTIONS.map((option) => {
-                      const disabled = option > maxRate;
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => setRate(option)}
+                {panel === "sound" ? (
+                  <div className="animate-pop absolute right-0 bottom-11 w-64 rounded-xl border border-dopa-700 bg-dopa-900 p-3 shadow-xl">
+                    <div className="px-1">
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                        <span>音量ブースト</span>
+                        <span
                           className={cn(
-                            "rounded-lg px-1 py-1 text-center text-[11px]",
-                            disabled
-                              ? "cursor-not-allowed text-zinc-600 line-through"
-                              : option === rate
-                                ? "bg-dopa-800 font-semibold text-accent"
-                                : "text-zinc-300 hover:bg-dopa-800",
+                            "font-semibold",
+                            boostLevel > 1.001 ? "text-accent" : "text-zinc-400",
                           )}
                         >
-                          {option}x
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {maxRate < 4 ? (
-                    <p className="mt-1 px-1 text-[10px] text-zinc-500">
-                      この端末では 2.5x 以上は再生できないため無効化しています
-                    </p>
-                  ) : null}
-
-                  <div className="my-2 h-px bg-dopa-800" />
-
-                  <div className="px-1">
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
-                      <span>ピッチ（音程のみ）</span>
-                      <select
-                        value={pitchSemitones}
-                        onChange={(e) => setPitchSemitones(Number(e.target.value))}
-                        className={cn(
-                          "h-7 rounded-lg border bg-dopa-950 px-1.5 text-[11px] outline-none focus:border-accent",
-                          pitchSemitones === 0
-                            ? "border-dopa-700 text-zinc-300"
-                            : "border-accent text-accent",
-                        )}
-                        aria-label="ピッチ選択"
-                      >
-                        {PITCH_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option > 0 ? `+${option}` : option} 半音
-                          </option>
-                        ))}
-                      </select>
+                          {boostLevel.toFixed(1)}x（{formatBoostDb(boostLevel)}）
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={3}
+                        step={0.1}
+                        value={boostLevel}
+                        onChange={(e) => setBoostLevel(Number(e.target.value))}
+                        className="mt-1 w-full cursor-pointer accent-fuchsia-500"
+                        aria-label="音量ブースト"
+                      />
                     </div>
-                    <p className="mt-1 text-[10px] leading-tight text-zinc-500">
-                      初回はサーバーで音源を生成します（数秒・一度生成したら即時）
+
+                    <div className="my-2 h-px bg-dopa-800" />
+
+                    <label className="flex cursor-pointer items-center justify-between px-1 text-xs text-zinc-300">
+                      イコライザー
+                      <input
+                        type="checkbox"
+                        checked={eqEnabled}
+                        onChange={(e) => setEqEnabled(e.target.checked)}
+                        className="accent-fuchsia-500"
+                      />
+                    </label>
+
+                    <div className="mt-2 grid grid-cols-2 gap-1">
+                      {EQ_PRESET_OPTIONS.map((preset) => (
+                        <button
+                          key={preset.key}
+                          type="button"
+                          onClick={() => {
+                            applyEqPreset(preset.key);
+                            if (!usePlayer.getState().eqEnabled) setEqEnabled(true);
+                          }}
+                          className={cn(
+                            "rounded-lg px-2 py-1.5 text-[11px]",
+                            eqPreset === preset.key
+                              ? "bg-dopa-800 font-semibold text-accent"
+                              : "text-zinc-300 hover:bg-dopa-800",
+                          )}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div
+                      className={cn(
+                        "mt-3 flex flex-col gap-2 px-1",
+                        !eqEnabled && "pointer-events-none opacity-40",
+                      )}
+                    >
+                      {(
+                        [
+                          { band: "bass" as EqBand, label: "低音", value: eqBass },
+                          { band: "mid" as EqBand, label: "中音", value: eqMid },
+                          { band: "treble" as EqBand, label: "高音", value: eqTreble },
+                        ] as const
+                      ).map((item) => (
+                        <div key={item.band}>
+                          <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                            <span>{item.label}</span>
+                            <span>
+                              {item.value > 0 ? `+${item.value}` : item.value}dB
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={-15}
+                            max={15}
+                            step={1}
+                            value={item.value}
+                            onChange={(e) => setEqBand(item.band, Number(e.target.value))}
+                            className="w-full cursor-pointer accent-fuchsia-500"
+                            aria-label={`${item.label}イコライザー`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <p className="mt-2 px-1 text-[10px] leading-tight text-zinc-500">
+                      iPhoneではサウンド設定ON中はバックグラウンド再生が不安定になる場合があります（OFFで通常通り）
                     </p>
                   </div>
+                ) : null}
+              </div>
 
-                  <div className="my-2 h-px bg-dopa-800" />
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPanel((current) => (current === "speed" ? null : "speed"))}
+                  className={cn(
+                    "flex h-8 items-center gap-1 rounded-full border border-dopa-700 px-2 text-xs font-semibold",
+                    rate === 1 && pitchSemitones === 0
+                      ? "text-zinc-300"
+                      : "border-accent text-accent",
+                  )}
+                  aria-label="再生速度"
+                >
+                  <Gauge className="size-3.5" />
+                  {rate}x
+                </button>
 
-                  <label className="flex cursor-pointer items-center justify-between px-1 text-xs text-zinc-300">
-                    速度変更でも声を変えない
-                    <input
-                      type="checkbox"
-                      checked={preservesPitch}
-                      onChange={(e) => setPreservesPitch(e.target.checked)}
-                      className="accent-fuchsia-500"
-                    />
-                  </label>
-                </div>
-              ) : null}
+                {panel === "speed" ? (
+                  <div className="animate-pop absolute right-0 bottom-11 w-64 rounded-xl border border-dopa-700 bg-dopa-900 p-3 shadow-xl">
+                    <div className="px-1">
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                        <span>速度</span>
+                        <span className="font-semibold text-accent">{rate}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.5}
+                        max={maxRate}
+                        step={0.05}
+                        value={Math.min(rate, maxRate)}
+                        onChange={(e) => setRate(Number(e.target.value))}
+                        className="mt-1 w-full cursor-pointer accent-fuchsia-500"
+                        aria-label="再生速度スライダー"
+                      />
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-4 gap-1">
+                      {RATE_OPTIONS.map((option) => {
+                        const disabled = option > maxRate;
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => setRate(option)}
+                            className={cn(
+                              "rounded-lg px-1 py-1 text-center text-[11px]",
+                              disabled
+                                ? "cursor-not-allowed text-zinc-600 line-through"
+                                : option === rate
+                                  ? "bg-dopa-800 font-semibold text-accent"
+                                  : "text-zinc-300 hover:bg-dopa-800",
+                            )}
+                          >
+                            {option}x
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {maxRate < 4 ? (
+                      <p className="mt-1 px-1 text-[10px] text-zinc-500">
+                        この端末では 2.5x 以上は再生できないため無効化しています
+                      </p>
+                    ) : null}
+
+                    <div className="my-2 h-px bg-dopa-800" />
+
+                    <div className="px-1">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
+                        <span>ピッチ（音程のみ）</span>
+                        <select
+                          value={pitchSemitones}
+                          onChange={(e) => setPitchSemitones(Number(e.target.value))}
+                          className={cn(
+                            "h-7 rounded-lg border bg-dopa-950 px-1.5 text-[11px] outline-none focus:border-accent",
+                            pitchSemitones === 0
+                              ? "border-dopa-700 text-zinc-300"
+                              : "border-accent text-accent",
+                          )}
+                          aria-label="ピッチ選択"
+                        >
+                          {PITCH_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option > 0 ? `+${option}` : option} 半音
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="mt-1 text-[10px] leading-tight text-zinc-500">
+                        初回はサーバーで音源を生成します（数秒・一度生成したら即時）
+                      </p>
+                    </div>
+
+                    <div className="my-2 h-px bg-dopa-800" />
+
+                    <label className="flex cursor-pointer items-center justify-between px-1 text-xs text-zinc-300">
+                      速度変更でも声を変えない
+                      <input
+                        type="checkbox"
+                        checked={preservesPitch}
+                        onChange={(e) => setPreservesPitch(e.target.checked)}
+                        className="accent-fuchsia-500"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -356,9 +583,107 @@ export function PlayerBar() {
               </button>
             </div>
           ) : null}
+        </div>
+      </div>
+
+      {queueOpen ? (
+        <div
+          className="animate-fade fixed inset-0 z-[60] bg-black/60"
+          onClick={() => setQueueOpen(false)}
+        >
+          <div
+            className="animate-slide-up absolute inset-x-0 bottom-0 flex max-h-[75dvh] flex-col rounded-t-2xl border-t border-dopa-700 bg-dopa-900"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 px-5 pt-4 pb-2">
+              <h2 className="text-sm font-bold">再生キュー（{queue.length}曲）</h2>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => usePlayer.getState().shuffleQueue()}
+                  className="flex h-8 items-center gap-1.5 rounded-full border border-dopa-700 px-3 text-xs font-semibold text-zinc-200 hover:bg-dopa-800"
+                >
+                  <Shuffle className="size-3.5" />
+                  シャッフル
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDopaMode(!dopaMode)}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold",
+                    dopaMode
+                      ? "border-accent text-accent"
+                      : "border-dopa-700 text-zinc-200 hover:bg-dopa-800",
+                  )}
+                >
+                  <Radio className="size-3.5" />
+                  ドパモード
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQueueOpen(false)}
+                  className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800"
+                  aria-label="閉じる"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
             </div>
+
+            {dopaMode ? (
+              <p className="px-5 pb-2 text-[11px] text-zinc-500">
+                キューが終わると、似てる曲を自動で追加して流し続けます
+              </p>
+            ) : null}
+
+            <ul className="flex-1 overflow-y-auto px-3 pb-4">
+              {queue.map((item, position) => (
+                <li
+                  key={`${item.id}-${position}`}
+                  className={cn(
+                    "flex items-center rounded-xl",
+                    position === index ? "bg-dopa-800" : "hover:bg-dopa-800/60",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      usePlayer.getState().playIndex(position);
+                      setQueueOpen(false);
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
+                  >
+                    <span className="w-6 shrink-0 text-right text-[10px] text-zinc-500">
+                      {position + 1}
+                    </span>
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-xs",
+                        position === index
+                          ? "font-bold text-accent"
+                          : "text-zinc-200",
+                      )}
+                    >
+                      {item.title}
+                    </span>
+                    <span className="shrink-0 truncate text-[10px] text-zinc-500">
+                      {item.artist ?? ""}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => usePlayer.getState().removeTrack(item.id)}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-dopa-700 hover:text-zinc-200"
+                    aria-label="キューから削除"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-        </>
+        </div>
       ) : null}
     </>
   );

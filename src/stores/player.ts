@@ -1,6 +1,15 @@
 import { create } from "zustand";
 
 import {
+  applyBoostGain,
+  applyEqGains,
+  EQ_PRESETS,
+  ensureEqGraph,
+  eqGraphReady,
+  MAX_BOOST,
+  MIN_BOOST,
+} from "@/lib/eq";
+import {
   applyPlaybackSettings,
   getAudio,
   isIos,
@@ -11,6 +20,13 @@ import {
 const RATE_KEY = "dopa:playback-rate";
 const PITCH_KEY = "dopa:preserves-pitch";
 const PITCH_SEMITONES_KEY = "dopa:pitch-semitones";
+const DOPA_MODE_KEY = "dopa:dopa-mode";
+const EQ_ENABLED_KEY = "dopa:eq-enabled";
+const EQ_PRESET_KEY = "dopa:eq-preset";
+const EQ_BASS_KEY = "dopa:eq-bass";
+const EQ_MID_KEY = "dopa:eq-mid";
+const EQ_TREBLE_KEY = "dopa:eq-treble";
+const BOOST_KEY = "dopa:boost-level";
 
 export type PlayerTrack = {
   id: string;
@@ -23,6 +39,8 @@ export type PlayerTrack = {
   deepLink?: string | null;
 };
 
+export type EqBand = "bass" | "mid" | "treble";
+
 type PlayerState = {
   queue: PlayerTrack[];
   index: number;
@@ -34,7 +52,17 @@ type PlayerState = {
   pitchSemitones: number;
   playbackError: string | null;
   playbackNotice: string | null;
+  dopaMode: boolean;
+  eqEnabled: boolean;
+  eqPreset: string;
+  eqBass: number;
+  eqMid: number;
+  eqTreble: number;
+  boostLevel: number;
   playQueue: (tracks: PlayerTrack[], index?: number) => void;
+  playQueueShuffled: (tracks: PlayerTrack[]) => void;
+  playIndex: (index: number) => void;
+  queueAdd: (track: PlayerTrack) => void;
   togglePlay: () => void;
   next: () => void;
   prev: () => void;
@@ -42,6 +70,12 @@ type PlayerState = {
   setRate: (rate: number) => void;
   setPreservesPitch: (value: boolean) => void;
   setPitchSemitones: (value: number) => void;
+  setDopaMode: (value: boolean) => void;
+  setEqEnabled: (value: boolean) => void;
+  applyEqPreset: (preset: string) => void;
+  setEqBand: (band: EqBand, value: number) => void;
+  setBoostLevel: (value: number) => void;
+  shuffleQueue: () => void;
   hydrateSettings: () => void;
   retryCurrent: () => void;
   removeTrack: (trackId: string) => void;
@@ -51,6 +85,10 @@ let fallbackTrackId: string | null = null;
 
 function formatSemitones(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
+}
+
+function persist(key: string, value: string) {
+  if (typeof window !== "undefined") localStorage.setItem(key, value);
 }
 
 function reportPlayError(error: unknown) {
@@ -203,6 +241,116 @@ function startTrack(
   }
 }
 
+function reloadCurrentKeepingPosition() {
+  const audio = getAudio();
+  const { queue, index, isPlaying, rate, preservesPitch, pitchSemitones } =
+    usePlayer.getState();
+  const track = queue[index];
+  if (!audio || !track) return;
+  const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  startTrack(track, rate, preservesPitch, pitchSemitones, { position, play: isPlaying });
+}
+
+function shuffleArray<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function activateSoundGraph(audio: HTMLAudioElement) {
+  const firstTime = !eqGraphReady();
+  if (firstTime) {
+    audio.crossOrigin = "anonymous";
+  }
+  void ensureEqGraph(audio).then((ok) => {
+    if (!ok) {
+      usePlayer.setState({ playbackError: "サウンド設定を初期化できませんでした" });
+      return;
+    }
+    const { eqEnabled, eqBass, eqMid, eqTreble, boostLevel } = usePlayer.getState();
+    applyEqGains(
+      eqEnabled
+        ? { bass: eqBass, mid: eqMid, treble: eqTreble }
+        : { bass: 0, mid: 0, treble: 0 },
+    );
+    applyBoostGain(boostLevel);
+    if (firstTime) {
+      reloadCurrentKeepingPosition();
+    }
+  });
+}
+
+function deactivateSoundGraph(audio: HTMLAudioElement) {
+  applyEqGains({ bass: 0, mid: 0, treble: 0 });
+  applyBoostGain(1);
+  audio.removeAttribute("crossorigin");
+  reloadCurrentKeepingPosition();
+}
+
+async function fetchRadioTracks(
+  seedId: string | null,
+  excludeIds: string[],
+): Promise<PlayerTrack[]> {
+  try {
+    const params = new URLSearchParams();
+    if (seedId) params.set("seed", seedId);
+    if (excludeIds.length > 0) params.set("exclude", excludeIds.slice(-50).join(","));
+    const res = await fetch(`/api/radio/next?${params.toString()}`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      tracks?: Array<{
+        id: string;
+        title: string;
+        artist: string | null;
+        durationSec: number | null;
+        hasArtwork: boolean;
+      }>;
+    };
+    return (body.tracks ?? []).map((track) => ({
+      id: track.id,
+      kind: "upload" as const,
+      title: track.title,
+      artist: track.artist,
+      durationSec: track.durationSec,
+      artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function extendWithRadio() {
+  const { queue, rate, preservesPitch, pitchSemitones } = usePlayer.getState();
+  usePlayer.setState({ playbackNotice: "ドパモード: 次の曲を探しています…" });
+
+  const seed = [...queue].reverse().find((track) => track.kind === "upload") ?? null;
+  const additions = await fetchRadioTracks(
+    seed?.id ?? null,
+    queue.map((track) => track.id),
+  );
+
+  if (additions.length === 0) {
+    usePlayer.setState({ playbackNotice: null, isPlaying: false, progress: 0 });
+    getAudio()?.pause();
+    return;
+  }
+
+  const latest = usePlayer.getState().queue;
+  const startIndex = latest.length;
+  usePlayer.setState({
+    queue: [...latest, ...additions],
+    index: startIndex,
+    isPlaying: true,
+    progress: 0,
+    duration: 0,
+    playbackNotice: null,
+  });
+  startTrack(additions[0], rate, preservesPitch, pitchSemitones);
+}
+
 export function handleAudioError(audio: HTMLAudioElement) {
   const mediaError = audio.error;
   const { queue, index, rate, preservesPitch, pitchSemitones } = usePlayer.getState();
@@ -255,6 +403,13 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   pitchSemitones: 0,
   playbackError: null,
   playbackNotice: null,
+  dopaMode: false,
+  eqEnabled: false,
+  eqPreset: "flat",
+  eqBass: 0,
+  eqMid: 0,
+  eqTreble: 0,
+  boostLevel: 1,
 
   playQueue: (tracks, index = 0) => {
     if (tracks.length === 0) return;
@@ -262,6 +417,33 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const { rate, preservesPitch, pitchSemitones } = get();
     set({ queue: tracks, index: target, isPlaying: true, progress: 0, duration: 0 });
     startTrack(tracks[target], rate, preservesPitch, pitchSemitones);
+  },
+
+  playQueueShuffled: (tracks) => {
+    if (tracks.length === 0) return;
+    get().playQueue(shuffleArray(tracks), 0);
+  },
+
+  playIndex: (index) => {
+    const { queue, rate, preservesPitch, pitchSemitones } = get();
+    if (index < 0 || index >= queue.length) return;
+    set({ index, isPlaying: true, progress: 0, duration: 0 });
+    startTrack(queue[index], rate, preservesPitch, pitchSemitones);
+  },
+
+  queueAdd: (track) => {
+    const { queue } = get();
+    if (queue.length === 0) {
+      get().playQueue([track], 0);
+      return;
+    }
+    set({ queue: [...queue, track] });
+    usePlayer.setState({ playbackNotice: `「${track.title}」をキューに追加しました` });
+    setTimeout(() => {
+      if (usePlayer.getState().playbackNotice === `「${track.title}」をキューに追加しました`) {
+        usePlayer.setState({ playbackNotice: null });
+      }
+    }, 2500);
   },
 
   togglePlay: () => {
@@ -282,15 +464,22 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   next: () => {
-    const { queue, index, rate, preservesPitch, pitchSemitones } = get();
+    const { queue, index, rate, preservesPitch, pitchSemitones, dopaMode } = get();
     const nextIndex = index + 1;
-    if (nextIndex >= queue.length) {
-      getAudio()?.pause();
-      set({ isPlaying: false, progress: 0 });
+
+    if (nextIndex < queue.length) {
+      set({ index: nextIndex, isPlaying: true, progress: 0, duration: 0 });
+      startTrack(queue[nextIndex], rate, preservesPitch, pitchSemitones);
       return;
     }
-    set({ index: nextIndex, isPlaying: true, progress: 0, duration: 0 });
-    startTrack(queue[nextIndex], rate, preservesPitch, pitchSemitones);
+
+    if (dopaMode) {
+      void extendWithRadio();
+      return;
+    }
+
+    getAudio()?.pause();
+    set({ isPlaying: false, progress: 0 });
   },
 
   prev: () => {
@@ -321,9 +510,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
   setRate: (rate) => {
     const clamped = Math.min(maxPlaybackRate(), Math.max(0.5, rate));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(RATE_KEY, String(clamped));
-    }
+    persist(RATE_KEY, String(clamped));
     const audio = getAudio();
     if (audio) {
       applyPlaybackSettings(audio, { rate: clamped, preservesPitch: get().preservesPitch });
@@ -332,9 +519,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   setPreservesPitch: (value) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(PITCH_KEY, String(value));
-    }
+    persist(PITCH_KEY, String(value));
     const audio = getAudio();
     if (audio) {
       applyPlaybackSettings(audio, { rate: get().rate, preservesPitch: value });
@@ -344,9 +529,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
   setPitchSemitones: (value) => {
     const clamped = Math.max(-12, Math.min(12, Math.round(value)));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(PITCH_SEMITONES_KEY, String(clamped));
-    }
+    persist(PITCH_SEMITONES_KEY, String(clamped));
     set({ pitchSemitones: clamped });
 
     const audio = getAudio();
@@ -356,6 +539,89 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
     const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
     startTrack(track, rate, preservesPitch, clamped, { position, play: isPlaying });
+  },
+
+  setDopaMode: (value) => {
+    persist(DOPA_MODE_KEY, String(value));
+    set({ dopaMode: value });
+  },
+
+  setEqEnabled: (value) => {
+    persist(EQ_ENABLED_KEY, String(value));
+    set({ eqEnabled: value });
+    const audio = getAudio();
+    if (!audio) return;
+    const needsGraph = value || get().boostLevel > MIN_BOOST;
+    if (needsGraph) {
+      activateSoundGraph(audio);
+    } else {
+      deactivateSoundGraph(audio);
+    }
+  },
+
+  setBoostLevel: (value) => {
+    const clamped = Math.max(
+      MIN_BOOST,
+      Math.min(MAX_BOOST, Math.round(value * 10) / 10),
+    );
+    persist(BOOST_KEY, String(clamped));
+    set({ boostLevel: clamped });
+    const audio = getAudio();
+    if (!audio) return;
+    const needsGraph = clamped > MIN_BOOST || get().eqEnabled;
+    if (needsGraph) {
+      if (eqGraphReady()) {
+        applyBoostGain(clamped);
+      } else {
+        activateSoundGraph(audio);
+      }
+    } else {
+      deactivateSoundGraph(audio);
+    }
+  },
+
+  shuffleQueue: () => {
+    const { queue, index } = get();
+    if (queue.length < 2) return;
+    const current = queue[index];
+    const rest = shuffleArray(queue.filter((_, position) => position !== index));
+    set({ queue: [current, ...rest], index: 0 });
+  },
+
+  applyEqPreset: (preset) => {
+    const gains = EQ_PRESETS[preset];
+    if (!gains) return;
+    persist(EQ_PRESET_KEY, preset);
+    persist(EQ_BASS_KEY, String(gains.bass));
+    persist(EQ_MID_KEY, String(gains.mid));
+    persist(EQ_TREBLE_KEY, String(gains.treble));
+    set({
+      eqPreset: preset,
+      eqBass: gains.bass,
+      eqMid: gains.mid,
+      eqTreble: gains.treble,
+    });
+    if (get().eqEnabled) {
+      applyEqGains(gains);
+    }
+  },
+
+  setEqBand: (band, value) => {
+    const clamped = Math.max(-15, Math.min(15, Math.round(value)));
+    const key = band === "bass" ? EQ_BASS_KEY : band === "mid" ? EQ_MID_KEY : EQ_TREBLE_KEY;
+    persist(key, String(clamped));
+    persist(EQ_PRESET_KEY, "custom");
+    const patch =
+      band === "bass"
+        ? { eqBass: clamped }
+        : band === "mid"
+          ? { eqMid: clamped }
+          : { eqTreble: clamped };
+    set({ ...patch, eqPreset: "custom" });
+    if (get().eqEnabled) {
+      const { eqBass, eqMid, eqTreble } = get();
+      applyEqGains({ bass: eqBass, mid: eqMid, treble: eqTreble });
+    }
   },
 
   hydrateSettings: () => {
@@ -369,10 +635,43 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const pitchSemitones = Number.isFinite(storedPitch)
       ? Math.max(-12, Math.min(12, Math.round(storedPitch)))
       : 0;
-    set({ rate, preservesPitch, pitchSemitones });
+    const dopaMode = localStorage.getItem(DOPA_MODE_KEY) === "true";
+    const eqEnabled = localStorage.getItem(EQ_ENABLED_KEY) === "true";
+    const eqPreset = localStorage.getItem(EQ_PRESET_KEY) ?? "flat";
+    const eqBass = Number(localStorage.getItem(EQ_BASS_KEY) ?? "0") || 0;
+    const eqMid = Number(localStorage.getItem(EQ_MID_KEY) ?? "0") || 0;
+    const eqTreble = Number(localStorage.getItem(EQ_TREBLE_KEY) ?? "0") || 0;
+    const storedBoost = Number(localStorage.getItem(BOOST_KEY) ?? "1");
+    const boostLevel = Number.isFinite(storedBoost)
+      ? Math.max(MIN_BOOST, Math.min(MAX_BOOST, storedBoost))
+      : 1;
+
+    set({
+      rate,
+      preservesPitch,
+      pitchSemitones,
+      dopaMode,
+      eqEnabled,
+      eqPreset,
+      eqBass,
+      eqMid,
+      eqTreble,
+      boostLevel,
+    });
+
     const audio = getAudio();
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
+      if (eqEnabled || boostLevel > MIN_BOOST) {
+        audio.crossOrigin = "anonymous";
+        void ensureEqGraph(audio).then((ok) => {
+          if (!ok) return;
+          if (eqEnabled) {
+            applyEqGains({ bass: eqBass, mid: eqMid, treble: eqTreble });
+          }
+          applyBoostGain(boostLevel);
+        });
+      }
     }
   },
 

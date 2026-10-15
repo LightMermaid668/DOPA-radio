@@ -3,8 +3,8 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { tracks, visibilityEnum } from "@/db/schema";
-import { deletePrefix, deleteObject } from "@/lib/s3";
 import { getSession } from "@/lib/session";
+import { deleteTrackStorage } from "@/lib/tracks";
 
 type Visibility = (typeof visibilityEnum.enumValues)[number];
 
@@ -114,16 +114,7 @@ export async function DELETE(
   }
 
   await db.delete(tracks).where(eq(tracks.id, id));
-
-  try {
-    if (track.originalKey) await deleteObject(track.originalKey);
-    if (track.audioKey) await deleteObject(track.audioKey);
-    if (track.artworkKey) await deleteObject(track.artworkKey);
-    await deletePrefix(`hls/${track.id}/`);
-    await deletePrefix(`pitch/${track.id}/`);
-  } catch (error) {
-    console.warn(`[tracks] storage cleanup failed (${track.id}):`, error);
-  }
+  await deleteTrackStorage(track);
 
   return NextResponse.json({ ok: true });
 }

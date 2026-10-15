@@ -9,6 +9,7 @@ import { SignOutButton } from "@/components/auth/sign-out-button";
 import { SpotifyConnect } from "@/components/settings/spotify-connect";
 import { db } from "@/db";
 import { integrations } from "@/db/schema";
+import { isAdminEmail } from "@/lib/admin";
 import { auth } from "@/lib/auth";
 import { spotifyConfigured } from "@/lib/spotify";
 
@@ -75,6 +76,19 @@ export default async function SettingsPage({
             Apple Music / Spotify 連携で追加してください。
           </p>
         </section>
+
+        {isAdminEmail(session.user.email) ? (
+          <Link
+            href="/admin"
+            className="flex items-center justify-between rounded-2xl border border-dopa-800 bg-dopa-900 p-5 hover:border-dopa-700"
+          >
+            <div>
+              <h2 className="font-bold">管理者メニュー</h2>
+              <p className="text-xs text-zinc-500">通報の確認と対応</p>
+            </div>
+            <span className="text-xs text-zinc-500">開く →</span>
+          </Link>
+        ) : null}
       </div>
     </main>
   );

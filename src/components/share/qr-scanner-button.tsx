@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import jsQR from "jsqr";
 import { ScanLine } from "lucide-react";
@@ -102,33 +103,38 @@ export function QrScannerButton() {
         <ScanLine className="size-4.5" />
       </button>
 
-      {open ? (
-        <div className="animate-fade fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6">
-          <div className="animate-pop flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-dopa-700 bg-dopa-900 p-4">
-            <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-black">
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="size-full object-cover"
-                aria-label="カメラ映像"
-              />
-              <div className="pointer-events-none absolute inset-8 rounded-2xl border-2 border-white/60" />
-            </div>
-            {error ? <p className="text-xs text-red-400">{error}</p> : null}
-            <p className="text-center text-[11px] text-zinc-500">
-              プレイリストやライブラリのQRコードを枠内に写してください
-            </p>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-full border border-dopa-700 px-4 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-dopa-800"
-            >
-              閉じる
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div className="animate-fade fixed inset-0 z-[80] overflow-y-auto overscroll-contain bg-black/80">
+              <div className="flex min-h-full items-center justify-center p-6">
+                <div className="animate-pop flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-dopa-700 bg-dopa-900 p-4">
+                  <div className="relative aspect-square w-full max-h-[60dvh] overflow-hidden rounded-xl bg-black">
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      className="size-full object-cover"
+                      aria-label="カメラ映像"
+                    />
+                    <div className="pointer-events-none absolute inset-8 rounded-2xl border-2 border-white/60" />
+                  </div>
+                  {error ? <p className="text-xs text-red-400">{error}</p> : null}
+                  <p className="text-center text-[11px] text-zinc-500">
+                    プレイリストやライブラリのQRコードを枠内に写してください
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="rounded-full border border-dopa-700 px-4 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-dopa-800"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

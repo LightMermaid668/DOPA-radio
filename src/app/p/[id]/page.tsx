@@ -3,11 +3,13 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { Library } from "lucide-react";
 
 import { Logo } from "@/components/logo";
 import { ImportPlaylistButton } from "@/components/playlists/import-playlist-button";
 import { PublicPlayButton, type PublicTrack } from "@/components/playlists/public-play-button";
 import { SaveTrackButton } from "@/components/playlists/save-track-button";
+import { ReportButton } from "@/components/reports/report-button";
 import { db } from "@/db";
 import { playlistItems, playlists, savedTracks, tracks } from "@/db/schema";
 import { user } from "@/db/auth-schema";
@@ -227,12 +229,28 @@ export default async function PublicPlaylistPage({
                 initialSaved={savedTrackIds.has(item.trackId)}
               />
             ) : null}
+            {item.kind === "upload" && item.ownerId ? (
+              <Link
+                href={session?.user.id === item.ownerId ? "/home" : `/u/${item.ownerId}`}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
+                aria-label="ライブラリへ"
+                title="ライブラリへ"
+              >
+                <Library className="size-3.5" />
+              </Link>
+            ) : null}
             <span className="shrink-0 text-xs text-zinc-500">
               {formatDuration(item.durationSec)}
             </span>
           </li>
         ))}
       </ul>
+
+      {session ? (
+        <div className="flex justify-end border-t border-dopa-800 pt-4 pb-16">
+          <ReportButton targetType="playlist" targetId={playlist.id} />
+        </div>
+      ) : null}
     </main>
   );
 }

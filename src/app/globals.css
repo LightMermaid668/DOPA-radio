@@ -100,7 +100,7 @@ body {
 }
 
 main {
-  animation: page-enter 0.3s ease-out both;
+  animation: page-enter 0.3s ease-out backwards;
 }
 
 /* View Transitions 対応ブラウザでは遷移アニメーションに任せる（二重に動かさない） */
@@ -140,19 +140,19 @@ main {
 }
 
 .animate-pop {
-  animation: pop-in 0.16s ease-out both;
+  animation: pop-in 0.16s ease-out backwards;
 }
 
 .animate-fade {
-  animation: fade-in 0.2s ease-out both;
+  animation: fade-in 0.2s ease-out backwards;
 }
 
 .animate-slide-up {
-  animation: slide-up 0.25s ease-out both;
+  animation: slide-up 0.25s ease-out backwards;
 }
 
 .animate-row {
-  animation: page-enter 0.25s ease-out both;
+  animation: page-enter 0.25s ease-out backwards;
 }
 
 button {

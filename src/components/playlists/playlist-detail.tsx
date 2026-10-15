@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
   Check,
   ClipboardList,
+  Library,
   Music2,
   Pencil,
   Play,
   Plus,
   Search,
+  Shuffle,
   Trash2,
   X,
 } from "lucide-react";
@@ -26,6 +29,7 @@ export type PlaylistItemData = {
   itemId: string;
   kind: "upload" | "apple" | "spotify";
   trackId: string | null;
+  ownerId: string | null;
   title: string | null;
   artist: string | null;
   durationSec: number | null;
@@ -106,7 +110,13 @@ type ExternalSearchResult = {
 
 type AddMode = "library" | "apple" | "spotify";
 
-export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
+export function PlaylistDetail({
+  data,
+  currentUserId,
+}: {
+  data: PlaylistDetailData;
+  currentUserId: string;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(data.title);
@@ -354,6 +364,20 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
               >
                 <Play className="size-3.5" />
                 再生
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (queueEntries.length > 0) {
+                    usePlayer.getState().playQueueShuffled(queueEntries.map((entry) => entry.track));
+                  }
+                }}
+                disabled={queueEntries.length === 0}
+              >
+                <Shuffle className="size-3.5" />
+                シャッフル
               </Button>
               <Button
                 type="button"
@@ -631,6 +655,16 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
+                  {item.kind === "upload" && item.ownerId ? (
+                    <Link
+                      href={item.ownerId === currentUserId ? "/home" : `/u/${item.ownerId}`}
+                      className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
+                      aria-label="ライブラリへ"
+                      title="ライブラリへ"
+                    >
+                      <Library className="size-3.5" />
+                    </Link>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => move(item.itemId, -1)}

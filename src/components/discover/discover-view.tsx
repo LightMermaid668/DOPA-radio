@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ListMusic, Play } from "lucide-react";
 
 import { SaveTrackButton } from "@/components/playlists/save-track-button";
+import { ReportButton } from "@/components/reports/report-button";
 import type { DiscoverPlaylist, DiscoverTrack } from "@/lib/discover";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/stores/player";
@@ -114,7 +115,10 @@ export function DiscoverView({
                   </p>
                 </div>
                 {loggedIn && !track.own ? (
-                  <SaveTrackButton trackId={track.id} initialSaved={track.saved} />
+                  <>
+                    <SaveTrackButton trackId={track.id} initialSaved={track.saved} />
+                    <ReportButton targetType="track" targetId={track.id} compact />
+                  </>
                 ) : null}
                 <span className={cn("shrink-0 text-xs text-zinc-500")}>
                   {formatDuration(track.durationSec)}

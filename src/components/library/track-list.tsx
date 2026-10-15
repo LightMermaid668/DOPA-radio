@@ -3,12 +3,14 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
   CheckSquare,
+  ListPlus,
   Loader2,
   MoreVertical,
   Pencil,
@@ -53,13 +55,22 @@ function formatDuration(sec: number | null): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+type MenuState = {
+  track: LibraryTrack;
+  top?: number;
+  bottom?: number;
+  right: number;
+};
+
+const MENU_ESTIMATED_HEIGHT = 320;
+
 export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkVisibility, setBulkVisibility] = useState<LibraryTrack["visibility"]>("public");
@@ -72,7 +83,32 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     return () => clearInterval(timer);
   }, [processing, router]);
 
+  // メニュー表示中はスクロール/リサイズで閉じる（位置ズレ防止）
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [menu]);
+
   const readyTracks = tracks.filter((track) => track.status === "ready");
+
+  function openMenu(track: LibraryTrack, button: HTMLButtonElement) {
+    const rect = button.getBoundingClientRect();
+    const openUp =
+      rect.bottom + MENU_ESTIMATED_HEIGHT > window.innerHeight &&
+      rect.top > MENU_ESTIMATED_HEIGHT;
+    setMenu({
+      track,
+      right: Math.max(8, window.innerWidth - rect.right),
+      top: openUp ? undefined : rect.bottom + 6,
+      bottom: openUp ? window.innerHeight - rect.top + 6 : undefined,
+    });
+  }
 
   function playFrom(id: string) {
     const index = readyTracks.findIndex((track) => track.id === id);
@@ -219,7 +255,12 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
             ))}
           </select>
           <span className="text-zinc-400">に変更</span>
-          <Button type="button" size="sm" onClick={applyBulk} disabled={bulkBusy || selected.size === 0}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={applyBulk}
+            disabled={bulkBusy || selected.size === 0}
+          >
             {bulkBusy ? "適用中…" : "適用"}
           </Button>
           <button
@@ -355,88 +396,14 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                     </button>
                   </div>
                 ) : (
-                  <div className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMenuOpenId((current) => (current === track.id ? null : track.id))
-                      }
-                      className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
-                      aria-label="メニュー"
-                    >
-                      <MoreVertical className="size-4" />
-                    </button>
-
-                    {menuOpenId === track.id ? (
-                      <>
-                        <button
-                          type="button"
-                          className="fixed inset-0 z-40 cursor-default"
-                          onClick={() => setMenuOpenId(null)}
-                          aria-label="メニューを閉じる"
-                          tabIndex={-1}
-                        />
-                        <div className="animate-pop absolute right-0 top-9 z-50 w-48 rounded-xl border border-dopa-700 bg-dopa-900 p-1.5 shadow-xl">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMenuOpenId(null);
-                              void patchTrack(track.id, { pinned: !track.pinned });
-                            }}
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
-                          >
-                            <Pin className="size-3.5" />
-                            {track.pinned ? "ピン留めを解除" : "ピン留めする"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMenuOpenId(null);
-                              startEdit(track);
-                            }}
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
-                          >
-                            <Pencil className="size-3.5" />
-                            編集
-                          </button>
-
-                          <div className="my-1 h-px bg-dopa-800" />
-                          <p className="px-2.5 pb-1 pt-0.5 text-[10px] text-zinc-500">
-                            公開範囲
-                          </p>
-                          {VISIBILITY_ORDER.map((visibility) => (
-                            <button
-                              key={visibility}
-                              type="button"
-                              onClick={() => {
-                                setMenuOpenId(null);
-                                void patchTrack(track.id, { visibility });
-                              }}
-                              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
-                            >
-                              {VISIBILITY_LABELS[visibility]}
-                              {track.visibility === visibility ? (
-                                <Check className="size-3.5 text-accent" />
-                              ) : null}
-                            </button>
-                          ))}
-
-                          <div className="my-1 h-px bg-dopa-800" />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMenuOpenId(null);
-                              void deleteTrack(track.id, track.title);
-                            }}
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-400 hover:bg-dopa-800"
-                          >
-                            <Trash2 className="size-3.5" />
-                            削除
-                          </button>
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => openMenu(track, event.currentTarget)}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
+                    aria-label="メニュー"
+                  >
+                    <MoreVertical className="size-4" />
+                  </button>
                 )}
               </div>
 
@@ -449,6 +416,102 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
           );
         })}
       </ul>
+
+      {menu && typeof document !== "undefined"
+        ? createPortal(
+            <>
+              <div
+                className="fixed inset-0 z-[69]"
+                onClick={() => setMenu(null)}
+                aria-hidden
+              />
+              <div
+                className="animate-pop fixed z-[70] max-h-[80dvh] w-48 overflow-y-auto rounded-xl border border-dopa-700 bg-dopa-900 p-1.5 shadow-2xl"
+                style={{ top: menu.top, bottom: menu.bottom, right: menu.right }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    const track = menu.track;
+                    setMenu(null);
+                    void patchTrack(track.id, { pinned: !track.pinned });
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
+                >
+                  <Pin className="size-3.5" />
+                  {menu.track.pinned ? "ピン留めを解除" : "ピン留めする"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const track = menu.track;
+                    setMenu(null);
+                    usePlayer.getState().queueAdd({
+                      id: track.id,
+                      kind: "upload",
+                      title: track.title,
+                      artist: track.artist,
+                      durationSec: track.durationSec,
+                      artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+                    });
+                  }}
+                  disabled={menu.track.status !== "ready"}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800 disabled:opacity-40"
+                >
+                  <ListPlus className="size-3.5" />
+                  キューに追加
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const track = menu.track;
+                    setMenu(null);
+                    startEdit(track);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
+                >
+                  <Pencil className="size-3.5" />
+                  編集
+                </button>
+
+                <div className="my-1 h-px bg-dopa-800" />
+                <p className="px-2.5 pb-1 pt-0.5 text-[10px] text-zinc-500">公開範囲</p>
+                {VISIBILITY_ORDER.map((visibility) => (
+                  <button
+                    key={visibility}
+                    type="button"
+                    onClick={() => {
+                      const track = menu.track;
+                      setMenu(null);
+                      void patchTrack(track.id, { visibility });
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
+                  >
+                    {VISIBILITY_LABELS[visibility]}
+                    {menu.track.visibility === visibility ? (
+                      <Check className="size-3.5 text-accent" />
+                    ) : null}
+                  </button>
+                ))}
+
+                <div className="my-1 h-px bg-dopa-800" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const track = menu.track;
+                    setMenu(null);
+                    void deleteTrack(track.id, track.title);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-400 hover:bg-dopa-800"
+                >
+                  <Trash2 className="size-3.5" />
+                  削除
+                </button>
+              </div>
+            </>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
