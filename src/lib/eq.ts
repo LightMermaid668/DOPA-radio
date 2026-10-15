@@ -157,11 +157,69 @@ export function ensureCaptureAnalyser(audio: HTMLAudioElement): boolean {
 
 let bassBuffer: Uint8Array<ArrayBuffer> | null = null;
 
+/* ---- マイク解析（iOS Safari など、要素から実データが取れない環境用） ---- */
+
+let micAnalyser: AnalyserNode | null = null;
+let micContext: AudioContext | null = null;
+let micStream: MediaStream | null = null;
+
+export async function enableMicAnalyser(): Promise<boolean> {
+  if (micAnalyser) return true;
+  try {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      return false;
+    }
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return false;
+    micContext = new Ctor();
+    const source = micContext.createMediaStreamSource(micStream);
+    const node = micContext.createAnalyser();
+    node.fftSize = 1024;
+    node.smoothingTimeConstant = 0.7;
+    source.connect(node);
+    await micContext.resume().catch(() => {});
+    micAnalyser = node;
+    return true;
+  } catch (error) {
+    console.warn("[eq] mic analyser failed:", error);
+    return false;
+  }
+}
+
+export function disableMicAnalyser() {
+  if (micStream) {
+    for (const track of micStream.getTracks()) track.stop();
+  }
+  micStream = null;
+  if (micContext) {
+    void micContext.close().catch(() => {});
+  }
+  micContext = null;
+  micAnalyser = null;
+}
+
+export function micAnalyserEnabled(): boolean {
+  return Boolean(micAnalyser);
+}
+
+function activeAnalyser(): AnalyserNode | null {
+  return analyser ?? captureAnalyser ?? micAnalyser;
+}
+
 /**
  * 低音成分のエネルギー（0〜1）。実解析が使えない場合は null。
  */
 export function getBassEnergy(): number | null {
-  const node = analyser ?? captureAnalyser;
+  const node = activeAnalyser();
   if (!node) return null;
   if (!bassBuffer || bassBuffer.length !== node.frequencyBinCount) {
     bassBuffer = new Uint8Array(node.frequencyBinCount);
@@ -177,10 +235,10 @@ export function getBassEnergy(): number | null {
 
 /**
  * 周波数スペクトルを target に書き込む。
- * EQグラフ → captureStream → どちらも無ければ false（疑似表示にフォールバック）。
+ * EQグラフ → captureStream → マイク → どちらも無ければ false（疑似表示にフォールバック）。
  */
 export function getSpectrumData(target: Uint8Array<ArrayBuffer>): boolean {
-  const node = analyser ?? captureAnalyser;
+  const node = activeAnalyser();
   if (!node) return false;
   node.getByteFrequencyData(target);
   return true;
@@ -191,7 +249,7 @@ export function getSpectrumData(target: Uint8Array<ArrayBuffer>): boolean {
  * 無音時は中央値128のフラットな配列になる。
  */
 export function getWaveformData(target: Uint8Array<ArrayBuffer>): boolean {
-  const node = analyser ?? captureAnalyser;
+  const node = activeAnalyser();
   if (!node) return false;
   node.getByteTimeDomainData(target);
   return true;

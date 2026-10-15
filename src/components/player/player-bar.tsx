@@ -6,6 +6,7 @@ import {
   Gauge,
   ListMusic,
   Loader2,
+  Mic,
   Pause,
   Play,
   Radio,
@@ -22,10 +23,18 @@ import {
   applyPlaybackSettings,
   fadeAudioVolume,
   getAudio,
+  isIos,
   maxPlaybackRate,
   resetAudioVolume,
 } from "@/lib/player-audio";
-import { ensureCaptureAnalyser, eqGraphReady, getSpectrumData } from "@/lib/eq";
+import {
+  disableMicAnalyser,
+  enableMicAnalyser,
+  ensureCaptureAnalyser,
+  eqGraphReady,
+  getSpectrumData,
+  micAnalyserEnabled,
+} from "@/lib/eq";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
 
@@ -112,6 +121,45 @@ export function PlayerBar() {
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [panel]);
+
+  // iPhone(Safari)は要素からの実解析が取れないため、マイク解析を提案
+  // （参考サイト soundmeterx と同じマイクFFT方式。スピーカーから出た音を拾います）
+  const [micStatus, setMicStatus] = useState<"none" | "offer" | "on">("none");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const evaluate = () => {
+      if (!isIos()) {
+        setMicStatus("none");
+        return;
+      }
+      if (micAnalyserEnabled()) {
+        setMicStatus("on");
+        return;
+      }
+      const { isPlaying } = usePlayer.getState();
+      setMicStatus(isPlaying && !eqGraphReady() ? "offer" : "none");
+    };
+    evaluate();
+    const timer = window.setInterval(evaluate, 2500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  async function handleMicToggle() {
+    if (micStatus === "on") {
+      disableMicAnalyser();
+      setMicStatus("offer");
+      return;
+    }
+    const ok = await enableMicAnalyser();
+    if (ok) {
+      setMicStatus("on");
+    } else {
+      usePlayer.setState({
+        playbackNotice: "マイクを利用できませんでした（ブラウザの許可が必要です）",
+      });
+    }
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -203,9 +251,10 @@ export function PlayerBar() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const COLUMNS = 96;
-    const levels = new Float32Array(COLUMNS);
-    const spectrum = new Uint8Array(256);
+    const MAX_COLUMNS = 96;
+    const levels = new Float32Array(MAX_COLUMNS);
+    const peaks = new Float32Array(MAX_COLUMNS);
+    const spectrum = new Uint8Array(512);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = canvas.getContext("2d");
     let raf = 0;
@@ -223,13 +272,17 @@ export function PlayerBar() {
       if (!context) return;
       const width = canvas.width;
       const height = canvas.height;
-      const mid = height / 2;
       context.clearRect(0, 0, width, height);
 
+      // 画面幅に合わせてバー本数を決定（バー幅3〜5px程度）
+      const columns = Math.max(40, Math.min(MAX_COLUMNS, Math.floor(width / 4)));
+      const barWidth = width / columns;
+      const gap = Math.max(1, barWidth * 0.28);
       const hasReal = playing ? getSpectrumData(spectrum) : false;
+      const maxBin = Math.max(1, Math.floor(spectrum.length * 0.66));
 
-      for (let i = 0; i < COLUMNS; i++) {
-        const norm = i / (COLUMNS - 1);
+      for (let i = 0; i < columns; i++) {
+        const norm = i / (columns - 1);
         let target = 0;
 
         if (playing) {
@@ -237,15 +290,15 @@ export function PlayerBar() {
             // 対数スケールで低域〜高域を割り当て、近傍3ビンを平均
             const bin = Math.max(
               1,
-              Math.min(spectrum.length - 1, Math.floor(Math.pow(norm, 1.7) * 170)),
+              Math.min(maxBin, Math.floor(Math.pow(norm, 1.6) * maxBin)),
             );
             const lo = Math.max(0, bin - 1);
             const hi = Math.min(spectrum.length - 1, bin + 1);
             let sum = 0;
             for (let b = lo; b <= hi; b++) sum += spectrum[b];
-            target = ((sum / (hi - lo + 1)) / 255) * (1.3 - norm * 0.45);
+            target = ((sum / (hi - lo + 1)) / 255) * (1.3 - norm * 0.4);
           } else {
-            // 実データを取得できない環境（iOSでサウンド設定OFF時など）の簡易表示
+            // 実データを取得できない環境（iOSでサウンド設定/マイク解析OFF時など）の簡易表示
             const beat = Math.max(0, Math.sin(time * speed * Math.PI * 2 * 2.0));
             const ripple =
               0.5 + 0.5 * Math.sin(norm * Math.PI * 6 + time * speed * 3.2);
@@ -257,54 +310,44 @@ export function PlayerBar() {
         }
 
         target = Math.max(0, Math.min(1, target));
-        // 速いアタック・緩いリリース（スペクトラムらしい動き）
+        // 速いアタック・緩いリリース
         levels[i] += (target - levels[i]) * (target > levels[i] ? 0.55 : 0.1);
+        // ピークホールド（ゆっくり落ちる白いキャップ）
+        if (levels[i] >= peaks[i]) {
+          peaks[i] = levels[i];
+        } else {
+          peaks[i] = Math.max(levels[i], peaks[i] - 0.012 * (1 + speed * 0.5));
+        }
       }
 
-      let average = 0;
-      for (let i = 0; i < COLUMNS; i++) average += levels[i];
-      average /= COLUMNS;
+      // 縦方向のレインボーグラデーション（アナライザー定番配色）
+      const gradient = context.createLinearGradient(0, height, 0, 0);
+      gradient.addColorStop(0, "#3b82f6");
+      gradient.addColorStop(0.25, "#22d3ee");
+      gradient.addColorStop(0.5, "#4ade80");
+      gradient.addColorStop(0.75, "#f7e463");
+      gradient.addColorStop(1, "#fb7185");
 
-      const gradient = context.createLinearGradient(0, 0, width, 0);
-      gradient.addColorStop(0, "#ff5f6d");
-      gradient.addColorStop(0.18, "#ff9f43");
-      gradient.addColorStop(0.36, "#f7e463");
-      gradient.addColorStop(0.54, "#4ade80");
-      gradient.addColorStop(0.72, "#38bdf8");
-      gradient.addColorStop(0.88, "#a78bfa");
-      gradient.addColorStop(1, "#f472b6");
-
-      const step = width / (COLUMNS - 1);
-      const maxAmp = height * 0.46;
-
-      // 中央線を軸にしたミラー型スペクトル（上下対称の閉じたカーブ）
-      context.beginPath();
-      for (let i = 0; i < COLUMNS; i++) {
-        const x = i * step;
-        const y = mid - levels[i] * maxAmp;
-        if (i === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      }
-      for (let i = COLUMNS - 1; i >= 0; i--) {
-        const x = i * step;
-        const y = mid + levels[i] * maxAmp;
-        context.lineTo(x, y);
-      }
-      context.closePath();
-
+      // バー
       context.fillStyle = gradient;
-      context.globalAlpha = 0.22;
-      context.fill();
-      context.globalAlpha = 1;
+      for (let i = 0; i < columns; i++) {
+        const barHeight = levels[i] * height * 0.94;
+        if (barHeight < 1) continue;
+        context.fillRect(
+          i * barWidth + gap / 2,
+          height - barHeight,
+          barWidth - gap,
+          barHeight,
+        );
+      }
 
-      context.strokeStyle = gradient;
-      context.lineWidth = Math.max(1.2, height * 0.12);
-      context.lineJoin = "round";
-      context.lineCap = "round";
-      context.shadowColor = "rgba(232, 121, 249, 0.6)";
-      context.shadowBlur = Math.max(3, height * (0.35 + average * 0.8));
-      context.stroke();
-      context.shadowBlur = 0;
+      // ピークキャップ
+      context.fillStyle = "rgba(255, 255, 255, 0.85)";
+      for (let i = 0; i < columns; i++) {
+        if (peaks[i] < 0.02) continue;
+        const peakY = height - peaks[i] * height * 0.94;
+        context.fillRect(i * barWidth + gap / 2, peakY - 1.5, barWidth - gap, 1.5);
+      }
     };
 
     if (reduced) {
@@ -397,7 +440,24 @@ export function PlayerBar() {
           viewTransitionName: "player-bar",
         }}
       >
-        <canvas ref={canvasRef} className="h-5 w-full" aria-hidden />
+        <div className="relative">
+          <canvas ref={canvasRef} className="h-6 w-full" aria-hidden />
+          {micStatus !== "none" ? (
+            <button
+              type="button"
+              onClick={handleMicToggle}
+              className="absolute left-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full border border-dopa-700 bg-dopa-950/85 px-2 py-[3px] text-[9px] font-semibold text-zinc-200 hover:bg-dopa-800"
+            >
+              <Mic
+                className={cn(
+                  "size-3",
+                  micStatus === "on" ? "text-accent" : "text-zinc-400",
+                )}
+              />
+              {micStatus === "offer" ? "実音解析（マイク）" : "マイク解析中"}
+            </button>
+          ) : null}
+        </div>
         <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
           <div className="flex items-center gap-2">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">
