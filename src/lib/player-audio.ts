@@ -7,6 +7,9 @@ export function getAudio(): HTMLAudioElement | null {
   if (!audio) {
     audio = new Audio();
     audio.preload = "auto";
+    // イコライザー/音量ブースト（Web Audio）を後からシームレスに使えるように
+    // 最初からCORSモードで取得する（自前配信・Apple試聴とも対応済み）
+    audio.crossOrigin = "anonymous";
   }
   return audio;
 }

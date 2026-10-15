@@ -241,16 +241,6 @@ function startTrack(
   }
 }
 
-function reloadCurrentKeepingPosition() {
-  const audio = getAudio();
-  const { queue, index, isPlaying, rate, preservesPitch, pitchSemitones } =
-    usePlayer.getState();
-  const track = queue[index];
-  if (!audio || !track) return;
-  const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
-  startTrack(track, rate, preservesPitch, pitchSemitones, { position, play: isPlaying });
-}
-
 function shuffleArray<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -261,10 +251,6 @@ function shuffleArray<T>(items: T[]): T[] {
 }
 
 function activateSoundGraph(audio: HTMLAudioElement) {
-  const firstTime = !eqGraphReady();
-  if (firstTime) {
-    audio.crossOrigin = "anonymous";
-  }
   void ensureEqGraph(audio).then((ok) => {
     if (!ok) {
       usePlayer.setState({ playbackError: "サウンド設定を初期化できませんでした" });
@@ -277,17 +263,12 @@ function activateSoundGraph(audio: HTMLAudioElement) {
         : { bass: 0, mid: 0, treble: 0 },
     );
     applyBoostGain(boostLevel);
-    if (firstTime) {
-      reloadCurrentKeepingPosition();
-    }
   });
 }
 
-function deactivateSoundGraph(audio: HTMLAudioElement) {
+function deactivateSoundGraph() {
   applyEqGains({ bass: 0, mid: 0, treble: 0 });
   applyBoostGain(1);
-  audio.removeAttribute("crossorigin");
-  reloadCurrentKeepingPosition();
 }
 
 async function fetchRadioTracks(
@@ -555,7 +536,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (needsGraph) {
       activateSoundGraph(audio);
     } else {
-      deactivateSoundGraph(audio);
+      deactivateSoundGraph();
     }
   },
 
@@ -576,7 +557,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         activateSoundGraph(audio);
       }
     } else {
-      deactivateSoundGraph(audio);
+      deactivateSoundGraph();
     }
   },
 
@@ -663,7 +644,6 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
       if (eqEnabled || boostLevel > MIN_BOOST) {
-        audio.crossOrigin = "anonymous";
         void ensureEqGraph(audio).then((ok) => {
           if (!ok) return;
           if (eqEnabled) {
