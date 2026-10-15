@@ -151,7 +151,7 @@ export async function transcodeTrack(trackId: string): Promise<void> {
         genre,
         chorusStartSec,
         chorusEndSec,
-        chorusSource: chorusStartSec !== null ? "auto" : null,
+        chorusSource: chorusStartSec !== null ? "auto" : "none",
         updatedAt: new Date(),
       })
       .where(eq(tracks.id, trackId));

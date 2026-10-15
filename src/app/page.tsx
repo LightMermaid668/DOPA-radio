@@ -33,6 +33,8 @@ const FEATURES = [
   },
 ];
 
+export const dynamic = "force-dynamic";
+
 export default function LandingPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6">

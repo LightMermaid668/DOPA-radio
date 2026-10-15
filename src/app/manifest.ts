@@ -3,6 +3,9 @@ import type { MetadataRoute } from "next";
 // PWA のアプリID（UUID）。変更すると別アプリ扱いになり、再インストールで新しいアイデンティティになる
 const APP_ID = "8f2d5c1a-64b7-4e93-9a0f-3d6e7b21c845";
 
+// デプロイ更新が即座に反映されるようキャッシュさせない
+export const dynamic = "force-dynamic";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: `/start?app=${APP_ID}`,

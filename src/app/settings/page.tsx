@@ -5,6 +5,7 @@ import Link from "next/link";
 import { and, eq } from "drizzle-orm";
 import { ArrowLeft, Music4, TriangleAlert } from "lucide-react";
 
+import pkg from "../../../package.json";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { SpotifyConnect } from "@/components/settings/spotify-connect";
 import { db } from "@/db";
@@ -90,6 +91,10 @@ export default async function SettingsPage({
           </Link>
         ) : null}
       </div>
+
+      <p className="mt-auto pb-8 pt-6 text-center text-[10px] text-zinc-600">
+        DOPA-radio v{pkg.version}
+      </p>
     </main>
   );
 }

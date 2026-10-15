@@ -70,6 +70,12 @@ export function ChorusEditor({
                 router.refresh();
                 return;
               }
+              if (value?.chorusSource === "none") {
+                window.clearInterval(timer);
+                setNotice("自動検出できませんでした。手動で範囲を設定してください");
+                router.refresh();
+                return;
+              }
             }
           } catch {
             /* ポーリング続行 */

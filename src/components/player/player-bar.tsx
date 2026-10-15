@@ -25,7 +25,7 @@ import {
   maxPlaybackRate,
   resetAudioVolume,
 } from "@/lib/player-audio";
-import { ensureCaptureAnalyser, eqGraphReady, getBassEnergy } from "@/lib/eq";
+import { ensureCaptureAnalyser, eqGraphReady, getSpectrumData } from "@/lib/eq";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
 
@@ -195,20 +195,20 @@ export function PlayerBar() {
     };
   }, []);
 
-  // リアル波形ライン（横一直線ベース）
-  // captureStream/EQグラフで実際の音を解析し、音量に応じて虹色の線が波打つ。無音時は一直線。
+  // リアル・スペクトラムアナライザー（ミラー型カーブ）
+  // 実際の周波数スペクトル（FFT）を描画し、無音時は中央の一直線になる。
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!track) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const COLUMNS = 128;
+    const COLUMNS = 96;
     const levels = new Float32Array(COLUMNS);
+    const spectrum = new Uint8Array(256);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = canvas.getContext("2d");
     let raf = 0;
-    let bassEnv = 0;
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -226,45 +226,44 @@ export function PlayerBar() {
       const mid = height / 2;
       context.clearRect(0, 0, width, height);
 
-      // 低音（ベース）エネルギーを取得。実解析が無い場合は疑似キックで駆動
-      let bassTarget = 0;
-      if (playing) {
-        const real = getBassEnergy();
-        if (real !== null) {
-          bassTarget = real;
-        } else {
-          const kick = Math.max(0, Math.sin(time * speed * Math.PI * 2 * 2.1));
-          const off = Math.max(
-            0,
-            Math.sin(time * speed * Math.PI * 2 * 4.2 + 1.3),
-          );
-          bassTarget =
-            0.14 + 0.62 * Math.pow(kick, 3) + 0.14 * Math.pow(off, 4);
-        }
-      }
-
-      // 速いアタック・緩いリリースで「ドパドパ」感を強調
-      bassEnv += (bassTarget - bassEnv) * (bassTarget > bassEnv ? 0.6 : 0.12);
-      const amp = Math.min(1, bassEnv * 2.6);
+      const hasReal = playing ? getSpectrumData(spectrum) : false;
 
       for (let i = 0; i < COLUMNS; i++) {
+        const norm = i / (COLUMNS - 1);
         let target = 0;
-        if (playing && amp > 0.001) {
-          const phase = i / COLUMNS;
-          // ライン全体が低音に合わせて激しく上下し、さざ波が走る
-          target =
-            (Math.sin(phase * Math.PI * 2 * 1.6 + time * speed * 2.6) * 0.55 +
-              Math.sin(phase * Math.PI * 2 * 4.2 - time * speed * 4.0) * 0.3 +
-              Math.sin(phase * Math.PI * 2 * 8.5 + time * speed * 6.5) * 0.15) *
-            amp *
-            2.1;
+
+        if (playing) {
+          if (hasReal) {
+            // 対数スケールで低域〜高域を割り当て、近傍3ビンを平均
+            const bin = Math.max(
+              1,
+              Math.min(spectrum.length - 1, Math.floor(Math.pow(norm, 1.7) * 170)),
+            );
+            const lo = Math.max(0, bin - 1);
+            const hi = Math.min(spectrum.length - 1, bin + 1);
+            let sum = 0;
+            for (let b = lo; b <= hi; b++) sum += spectrum[b];
+            target = ((sum / (hi - lo + 1)) / 255) * (1.3 - norm * 0.45);
+          } else {
+            // 実データを取得できない環境（iOSでサウンド設定OFF時など）の簡易表示
+            const beat = Math.max(0, Math.sin(time * speed * Math.PI * 2 * 2.0));
+            const ripple =
+              0.5 + 0.5 * Math.sin(norm * Math.PI * 6 + time * speed * 3.2);
+            target =
+              (0.16 + 0.6 * Math.pow(beat, 3)) *
+              (0.4 + 0.6 * ripple) *
+              (1 - norm * 0.6);
+          }
         }
 
-        target = Math.max(-1, Math.min(1, target));
-        levels[i] +=
-          (target - levels[i]) *
-          (Math.abs(target) > Math.abs(levels[i]) ? 0.6 : 0.22);
+        target = Math.max(0, Math.min(1, target));
+        // 速いアタック・緩いリリース（スペクトラムらしい動き）
+        levels[i] += (target - levels[i]) * (target > levels[i] ? 0.55 : 0.1);
       }
+
+      let average = 0;
+      for (let i = 0; i < COLUMNS; i++) average += levels[i];
+      average /= COLUMNS;
 
       const gradient = context.createLinearGradient(0, 0, width, 0);
       gradient.addColorStop(0, "#ff5f6d");
@@ -275,23 +274,35 @@ export function PlayerBar() {
       gradient.addColorStop(0.88, "#a78bfa");
       gradient.addColorStop(1, "#f472b6");
 
-      context.beginPath();
       const step = width / (COLUMNS - 1);
+      const maxAmp = height * 0.46;
+
+      // 中央線を軸にしたミラー型スペクトル（上下対称の閉じたカーブ）
+      context.beginPath();
       for (let i = 0; i < COLUMNS; i++) {
         const x = i * step;
-        const y = mid - levels[i] * height * 0.46;
-        if (i === 0) {
-          context.moveTo(x, y);
-        } else {
-          context.lineTo(x, y);
-        }
+        const y = mid - levels[i] * maxAmp;
+        if (i === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
       }
+      for (let i = COLUMNS - 1; i >= 0; i--) {
+        const x = i * step;
+        const y = mid + levels[i] * maxAmp;
+        context.lineTo(x, y);
+      }
+      context.closePath();
+
+      context.fillStyle = gradient;
+      context.globalAlpha = 0.22;
+      context.fill();
+      context.globalAlpha = 1;
+
       context.strokeStyle = gradient;
-      context.lineWidth = Math.max(1.5, height * 0.16) * (1 + amp * 0.9);
+      context.lineWidth = Math.max(1.2, height * 0.12);
       context.lineJoin = "round";
       context.lineCap = "round";
       context.shadowColor = "rgba(232, 121, 249, 0.6)";
-      context.shadowBlur = Math.max(4, height * (0.5 + amp * 0.9));
+      context.shadowBlur = Math.max(3, height * (0.35 + average * 0.8));
       context.stroke();
       context.shadowBlur = 0;
     };
@@ -308,9 +319,7 @@ export function PlayerBar() {
       const { isPlaying, rate } = usePlayer.getState();
       frame++;
 
-      // captureStream による実解析を試行（対応ブラウザなら常に本物の波形）
-      // ※ EQ/音量ブーストのグラフがある場合は captureStream を作らない
-      //    （同じ要素に MediaElementSource と captureStream を併用すると無音になるブラウザがある）
+      // captureStream による実解析を試行（EQグラフが無い場合）
       if (
         !captureReady &&
         isPlaying &&

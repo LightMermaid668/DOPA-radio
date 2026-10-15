@@ -3,6 +3,8 @@ import Link from "next/link";
 
 export const metadata: Metadata = { title: "利用規約" };
 
+export const dynamic = "force-dynamic";
+
 export default function TermsPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-6 py-12">

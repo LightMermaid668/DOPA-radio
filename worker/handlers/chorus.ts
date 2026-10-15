@@ -30,7 +30,8 @@ export async function detectTrackChorus(trackId: string): Promise<void> {
       .set({
         chorusStartSec: chorus?.start ?? null,
         chorusEndSec: chorus?.end ?? null,
-        chorusSource: chorus ? "auto" : null,
+        // "none" = 解析済みだがサビを特定できなかった（未解析nullと区別）
+        chorusSource: chorus ? "auto" : "none",
         updatedAt: new Date(),
       })
       .where(eq(tracks.id, trackId));

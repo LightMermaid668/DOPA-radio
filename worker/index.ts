@@ -1,11 +1,31 @@
+import { and, eq, isNull } from "drizzle-orm";
 import { PgBoss, type Job } from "pg-boss";
 
-import { databaseUrl } from "../src/db";
+import { db, databaseUrl } from "../src/db";
+import { tracks } from "../src/db/schema";
 import { detectTrackChorus } from "./handlers/chorus";
 import { generatePitchVariant } from "./handlers/pitch";
 import { transcodeTrack } from "./handlers/transcode";
 
 const QUEUES = ["transcode", "pitch", "chorus"] as const;
+
+/** 起動時に、まだサビ解析していない曲を自動で解析キューへ入れる（バックグラウンド適用） */
+async function enqueueChorusBackfill(boss: PgBoss) {
+  const rows = await db
+    .select({ id: tracks.id })
+    .from(tracks)
+    .where(and(eq(tracks.status, "ready"), isNull(tracks.chorusSource)));
+  for (const row of rows) {
+    await boss.send(
+      "chorus",
+      { trackId: row.id },
+      { expireInSeconds: 1800, retryLimit: 1, singletonKey: `chorus-${row.id}` },
+    );
+  }
+  if (rows.length > 0) {
+    console.log(`[worker] chorus backfill enqueued: ${rows.length} track(s)`);
+  }
+}
 
 async function main() {
   const boss = new PgBoss({ connectionString: databaseUrl() });
@@ -19,6 +39,13 @@ async function main() {
 
   for (const queue of QUEUES) {
     await boss.createQueue(queue);
+  }
+
+  // 未解析の曲をバックグラウンドで自動解析（結果はDBに自動保存される）
+  try {
+    await enqueueChorusBackfill(boss);
+  } catch (error) {
+    console.error("[worker] chorus backfill failed:", error);
   }
 
   await boss.work(

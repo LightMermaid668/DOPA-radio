@@ -1,7 +1,7 @@
 /* DOPA-radio service worker (Phase 0: installability only) */
 /* Phase 3 でオフラインキャッシュ（アプリシェル・自分のプレイリスト）を追加する */
 
-const CACHE_NAME = "dopa-radio-shell-v2";
+const CACHE_NAME = "dopa-radio-shell-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME));
