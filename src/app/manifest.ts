@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "DOPA-radio",
     short_name: "DOPA",
     description: "ドパガキのための音楽基地。曲を持ち寄ってプレイリストを共有しよう。",
-    start_url: "/",
+    start_url: "/start",
     display: "standalone",
     background_color: "#0a0a0c",
     theme_color: "#0a0a0c",

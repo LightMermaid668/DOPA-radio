@@ -2,6 +2,7 @@ import { Headphones, Link2, ListMusic, UploadCloud } from "lucide-react";
 import Link from "next/link";
 
 import { Logo } from "@/components/logo";
+import { StandaloneRedirect } from "@/components/standalone-redirect";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ const FEATURES = [
 export default function LandingPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6">
+      <StandaloneRedirect />
       <header className="flex items-center justify-between py-6">
         <Logo />
         <nav className="flex items-center gap-3">
