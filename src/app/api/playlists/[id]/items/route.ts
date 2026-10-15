@@ -3,7 +3,9 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { playlistItems, playlists, tracks } from "@/db/schema";
+import { lookupAppleTrack } from "@/lib/apple";
 import { getSession } from "@/lib/session";
+import { getSpotifyAccessToken, lookupSpotifyTrack } from "@/lib/spotify";
 
 async function getOwnedPlaylistId(playlistId: string, userId: string) {
   const playlist = await db.query.playlists.findFirst({
@@ -12,7 +14,8 @@ async function getOwnedPlaylistId(playlistId: string, userId: string) {
   return playlist?.id ?? null;
 }
 
-type AddBody = { trackIds?: string[] };
+type ExternalRequest = { kind: string; externalId: string };
+type AddBody = { trackIds?: string[]; external?: ExternalRequest[] };
 type ReorderBody = { itemIds?: string[] };
 
 export async function POST(
@@ -31,24 +34,94 @@ export async function POST(
   }
 
   const body = (await request.json().catch(() => null)) as AddBody | null;
-  const trackIds = body?.trackIds?.filter((trackId) => typeof trackId === "string");
-  if (!trackIds?.length || trackIds.length > 100) {
+  const trackIds = (body?.trackIds ?? []).filter((trackId) => typeof trackId === "string");
+  const externalRequests = (body?.external ?? []).filter(
+    (item) =>
+      item &&
+      typeof item.externalId === "string" &&
+      (item.kind === "apple" || item.kind === "spotify"),
+  );
+
+  if (trackIds.length > 100 || externalRequests.length > 50) {
+    return NextResponse.json({ error: "一度に追加できる数を超えています" }, { status: 400 });
+  }
+  if (trackIds.length === 0 && externalRequests.length === 0) {
     return NextResponse.json({ error: "追加する曲を指定してください" }, { status: 400 });
   }
 
-  const ownedTracks = await db
-    .select({ id: tracks.id })
-    .from(tracks)
-    .where(
-      and(
-        eq(tracks.ownerId, session.user.id),
-        eq(tracks.status, "ready"),
-        inArray(tracks.id, trackIds),
-      ),
-    );
-  const ownedIds = new Set(ownedTracks.map((row) => row.id));
-  const validIds = trackIds.filter((trackId) => ownedIds.has(trackId));
-  if (validIds.length === 0) {
+  type NewItem = {
+    kind: "upload" | "apple" | "spotify";
+    trackId: string | null;
+    externalId: string | null;
+    externalMeta: Record<string, unknown> | null;
+  };
+
+  const newItems: NewItem[] = [];
+
+  if (trackIds.length > 0) {
+    const ownedTracks = await db
+      .select({ id: tracks.id })
+      .from(tracks)
+      .where(
+        and(
+          eq(tracks.ownerId, session.user.id),
+          eq(tracks.status, "ready"),
+          inArray(tracks.id, trackIds),
+        ),
+      );
+    const ownedIds = new Set(ownedTracks.map((row) => row.id));
+    for (const trackId of trackIds) {
+      if (!ownedIds.has(trackId)) continue;
+      newItems.push({ kind: "upload", trackId, externalId: null, externalMeta: null });
+    }
+  }
+
+  for (const external of externalRequests) {
+    if (external.kind === "apple") {
+      const track = await lookupAppleTrack(external.externalId);
+      if (!track) continue;
+      newItems.push({
+        kind: "apple",
+        trackId: null,
+        externalId: track.externalId,
+        externalMeta: {
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          artworkUrl: track.artworkUrl,
+          deepLink: track.deepLink,
+          previewUrl: track.previewUrl,
+          durationMs: track.durationMs,
+        },
+      });
+    } else if (external.kind === "spotify") {
+      const token = await getSpotifyAccessToken(session.user.id);
+      if (!token) {
+        return NextResponse.json(
+          { error: "Spotifyと連携してから追加してください" },
+          { status: 400 },
+        );
+      }
+      const track = await lookupSpotifyTrack(token, external.externalId);
+      if (!track) continue;
+      newItems.push({
+        kind: "spotify",
+        trackId: null,
+        externalId: track.externalId,
+        externalMeta: {
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          artworkUrl: track.artworkUrl,
+          deepLink: track.deepLink,
+          durationMs: track.durationMs,
+          uri: track.uri ?? undefined,
+        },
+      });
+    }
+  }
+
+  if (newItems.length === 0) {
     return NextResponse.json({ error: "追加できる曲がありません" }, { status: 400 });
   }
 
@@ -59,10 +132,12 @@ export async function POST(
   const basePosition = Number(maxRow?.max ?? 0);
 
   await db.insert(playlistItems).values(
-    validIds.map((trackId, index) => ({
+    newItems.map((item, index) => ({
       playlistId: id,
-      kind: "upload" as const,
-      trackId,
+      kind: item.kind,
+      trackId: item.trackId,
+      externalId: item.externalId,
+      externalMeta: item.externalMeta,
       position: basePosition + index + 1,
       addedBy: session.user.id,
     })),
@@ -70,7 +145,7 @@ export async function POST(
 
   await db.update(playlists).set({ updatedAt: new Date() }).where(eq(playlists.id, id));
 
-  return NextResponse.json({ ok: true, added: validIds.length });
+  return NextResponse.json({ ok: true, added: newItems.length });
 }
 
 export async function PATCH(

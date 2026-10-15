@@ -11,6 +11,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -18,7 +19,7 @@ import {
 import { ShareButton } from "@/components/playlists/share-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { usePlayer } from "@/stores/player";
+import { usePlayer, type PlayerTrack } from "@/stores/player";
 
 export type PlaylistItemData = {
   itemId: string;
@@ -29,6 +30,9 @@ export type PlaylistItemData = {
   durationSec: number | null;
   status: "processing" | "ready" | "failed" | null;
   hasArtwork: boolean;
+  artworkUrl: string | null;
+  deepLink: string | null;
+  previewUrl: string | null;
 };
 
 export type PlaylistDetailData = {
@@ -45,11 +49,42 @@ const VISIBILITY_LABELS: Record<PlaylistDetailData["visibility"], string> = {
   public: "公開",
 };
 
+const KIND_LABELS: Record<PlaylistItemData["kind"], string> = {
+  upload: "アップロード",
+  apple: "Apple Music",
+  spotify: "Spotify",
+};
+
 function formatDuration(sec: number | null): string {
   if (!sec || !Number.isFinite(sec)) return "--:--";
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function toPlayerTrack(item: PlaylistItemData): PlayerTrack | null {
+  if (item.kind === "upload") {
+    if (!item.trackId || item.status !== "ready") return null;
+    return {
+      id: item.trackId,
+      kind: "upload",
+      title: item.title ?? "無題のトラック",
+      artist: item.artist,
+      durationSec: item.durationSec,
+      artworkUrl: item.hasArtwork ? `/api/tracks/${item.trackId}/artwork` : null,
+    };
+  }
+  if (!item.title) return null;
+  return {
+    id: `${item.kind}:${item.itemId}`,
+    kind: item.kind,
+    title: item.title,
+    artist: item.artist,
+    durationSec: item.durationSec,
+    artworkUrl: item.artworkUrl,
+    previewUrl: item.previewUrl,
+    deepLink: item.deepLink,
+  };
 }
 
 type LibraryTrackOption = {
@@ -59,6 +94,17 @@ type LibraryTrackOption = {
   status: string;
 };
 
+type ExternalSearchResult = {
+  externalId: string;
+  title: string;
+  artist: string;
+  artworkUrl: string | null;
+  durationMs: number | null;
+  previewUrl?: string | null;
+};
+
+type AddMode = "library" | "apple" | "spotify";
+
 export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -66,11 +112,17 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
   const [description, setDescription] = useState(data.description ?? "");
   const [busy, setBusy] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState<AddMode>("library");
   const [options, setOptions] = useState<LibraryTrackOption[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<ExternalSearchResult[] | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [addingId, setAddingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!addOpen || options !== null) return;
+    if (!addOpen || addMode !== "library" || options !== null) return;
     void (async () => {
       const res = await fetch("/api/tracks");
       const body = (await res.json().catch(() => null)) as {
@@ -78,23 +130,17 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
       } | null;
       setOptions(body?.tracks ?? []);
     })();
-  }, [addOpen, options]);
+  }, [addOpen, addMode, options]);
 
-  const readyItems = data.items.filter(
-    (item) => item.kind === "upload" && item.status === "ready" && item.trackId,
-  );
+  const queueEntries = data.items
+    .map((item) => ({ itemId: item.itemId, track: toPlayerTrack(item) }))
+    .filter((entry): entry is { itemId: string; track: PlayerTrack } => entry.track !== null);
 
   function playFrom(itemId: string) {
-    const index = readyItems.findIndex((item) => item.itemId === itemId);
+    const index = queueEntries.findIndex((entry) => entry.itemId === itemId);
     if (index < 0) return;
     usePlayer.getState().playQueue(
-      readyItems.map((item) => ({
-        id: item.trackId as string,
-        title: item.title ?? "無題のトラック",
-        artist: item.artist,
-        durationSec: item.durationSec,
-        artworkUrl: item.hasArtwork ? `/api/tracks/${item.trackId}/artwork` : null,
-      })),
+      queueEntries.map((entry) => entry.track),
       index,
     );
   }
@@ -157,6 +203,55 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
       router.refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runSearch() {
+    const term = searchTerm.trim();
+    if (!term || searchBusy || addMode === "library") return;
+    setSearchBusy(true);
+    setSearchError(null);
+    setSearchResults(null);
+    try {
+      const endpoint = addMode === "apple" ? "/api/apple/search" : "/api/spotify/search";
+      const res = await fetch(`${endpoint}?q=${encodeURIComponent(term)}`);
+      const body = (await res.json().catch(() => null)) as
+        | { tracks?: ExternalSearchResult[]; error?: string }
+        | null;
+      if (!res.ok) {
+        setSearchError(body?.error ?? "検索に失敗しました");
+        setSearchResults([]);
+        return;
+      }
+      setSearchResults(body?.tracks ?? []);
+    } catch {
+      setSearchError("検索に失敗しました");
+      setSearchResults([]);
+    } finally {
+      setSearchBusy(false);
+    }
+  }
+
+  async function addExternal(kind: "apple" | "spotify", externalId: string) {
+    setAddingId(externalId);
+    setSearchError(null);
+    try {
+      const res = await fetch(`/api/playlists/${data.id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ external: [{ kind, externalId }] }),
+      });
+      if (res.ok) {
+        setSearchResults((prev) =>
+          prev ? prev.filter((result) => result.externalId !== externalId) : prev,
+        );
+        router.refresh();
+      } else {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setSearchError(body?.error ?? "追加に失敗しました");
+      }
+    } finally {
+      setAddingId(null);
     }
   }
 
@@ -252,10 +347,9 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
                 type="button"
                 size="sm"
                 onClick={() => {
-                  const first = data.items[0]?.itemId;
-                  if (first) playFrom(first);
+                  if (queueEntries[0]) playFrom(queueEntries[0].itemId);
                 }}
-                disabled={readyItems.length === 0}
+                disabled={queueEntries.length === 0}
               >
                 <Play className="size-3.5" />
                 再生
@@ -302,7 +396,31 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
       {addOpen ? (
         <section className="rounded-2xl border border-dopa-700 bg-dopa-900 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold">ライブラリから追加</h2>
+            <div className="flex gap-1">
+              {(["library", "apple", "spotify"] as AddMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    setAddMode(mode);
+                    setSearchResults(null);
+                    setSearchError(null);
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-semibold",
+                    addMode === mode
+                      ? "bg-rainbow text-dopa-950"
+                      : "text-zinc-300 hover:bg-dopa-800",
+                  )}
+                >
+                  {mode === "library"
+                    ? "ライブラリ"
+                    : mode === "apple"
+                      ? "Apple Music"
+                      : "Spotify"}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => setAddOpen(false)}
@@ -311,41 +429,136 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
               閉じる
             </button>
           </div>
-          {options === null ? (
-            <p className="text-xs text-zinc-500">読み込み中…</p>
-          ) : addableOptions.length === 0 ? (
-            <p className="text-xs text-zinc-500">追加できる曲がありません</p>
+
+          {addMode === "library" ? (
+            options === null ? (
+              <p className="text-xs text-zinc-500">読み込み中…</p>
+            ) : addableOptions.length === 0 ? (
+              <p className="text-xs text-zinc-500">追加できる曲がありません</p>
+            ) : (
+              <>
+                <ul className="mb-3 max-h-64 space-y-1 overflow-y-auto">
+                  {addableOptions.map((option) => (
+                    <li key={option.id}>
+                      <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-dopa-800">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(option.id)}
+                          onChange={() =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(option.id)) next.delete(option.id);
+                              else next.add(option.id);
+                              return next;
+                            })
+                          }
+                          className="size-4 accent-fuchsia-500"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm">{option.title}</span>
+                        <span className="shrink-0 text-xs text-zinc-500">
+                          {option.artist ?? ""}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={addSelected}
+                  disabled={selected.size === 0 || busy}
+                >
+                  追加（{selected.size}件）
+                </Button>
+              </>
+            )
           ) : (
-            <>
-              <ul className="mb-3 max-h-64 space-y-1 overflow-y-auto">
-                {addableOptions.map((option) => (
-                  <li key={option.id}>
-                    <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-dopa-800">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(option.id)}
-                        onChange={() =>
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(option.id)) next.delete(option.id);
-                            else next.add(option.id);
-                            return next;
-                          })
-                        }
-                        className="size-4 accent-fuchsia-500"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm">{option.title}</span>
-                      <span className="shrink-0 text-xs text-zinc-500">
-                        {option.artist ?? ""}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              <Button type="button" size="sm" onClick={addSelected} disabled={selected.size === 0 || busy}>
-                追加（{selected.size}件）
-              </Button>
-            </>
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-2">
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void runSearch();
+                  }}
+                  placeholder="曲名・アーティストで検索"
+                  className="h-9 flex-1 rounded-xl border border-dopa-700 bg-dopa-950 px-3 text-sm outline-none focus:border-accent"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={runSearch}
+                  disabled={!searchTerm.trim() || searchBusy}
+                >
+                  <Search className="size-3.5" />
+                  {searchBusy ? "検索中…" : "検索"}
+                </Button>
+              </div>
+
+              {addMode === "spotify" ? (
+                <p className="text-[11px] text-zinc-500">
+                  Spotifyは
+                  <a
+                    href="/settings"
+                    className="text-accent underline underline-offset-2"
+                  >
+                    設定
+                  </a>
+                  から連携が必要です（再生はSpotifyアプリで行います）
+                </p>
+              ) : (
+                <p className="text-[11px] text-zinc-500">
+                  30秒の試聴が再生できます（フル再生は「アプリで開く」からApple Musicで）
+                </p>
+              )}
+
+              {searchError ? <p className="text-xs text-red-400">{searchError}</p> : null}
+
+              {searchResults !== null ? (
+                searchResults.length === 0 ? (
+                  <p className="text-xs text-zinc-500">見つかりませんでした</p>
+                ) : (
+                  <ul className="max-h-72 space-y-1 overflow-y-auto">
+                    {searchResults.map((result) => (
+                      <li
+                        key={result.externalId}
+                        className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-dopa-800"
+                      >
+                        <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">
+                          {result.artworkUrl ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={result.artworkUrl}
+                              alt=""
+                              className="size-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <Music2 className="size-4 text-zinc-500" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm">{result.title}</p>
+                          <p className="truncate text-xs text-zinc-500">{result.artist}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            addExternal(addMode as "apple" | "spotify", result.externalId)
+                          }
+                          disabled={addingId === result.externalId}
+                        >
+                          <Plus className="size-3.5" />
+                          {addingId === result.externalId ? "追加中…" : "追加"}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : null}
+            </div>
           )}
         </section>
       ) : null}
@@ -353,12 +566,14 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
       {data.items.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-dopa-700 bg-dopa-900/60 px-6 py-12 text-center">
           <ClipboardList className="size-7 text-zinc-500" />
-          <p className="text-sm text-zinc-400">「曲を追加」からライブラリの曲を追加しよう</p>
+          <p className="text-sm text-zinc-400">
+            「曲を追加」からライブラリやApple Musicの曲を追加しよう
+          </p>
         </div>
       ) : (
         <ul className="flex flex-col gap-2 pb-8">
           {data.items.map((item, position) => {
-            const ready = item.status === "ready";
+            const playable = toPlayerTrack(item) !== null;
             return (
               <li
                 key={item.itemId}
@@ -370,17 +585,25 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
                 <button
                   type="button"
                   onClick={() => playFrom(item.itemId)}
-                  disabled={!ready}
+                  disabled={!playable}
                   className={cn(
                     "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
-                    ready ? "bg-dopa-800 hover:ring-2 hover:ring-accent" : "bg-dopa-800/50",
+                    playable ? "bg-dopa-800 hover:ring-2 hover:ring-accent" : "bg-dopa-800/50",
                   )}
                   aria-label="再生"
                 >
-                  {ready && item.hasArtwork && item.trackId ? (
+                  {item.kind === "upload" && item.hasArtwork && item.trackId ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={`/api/tracks/${item.trackId}/artwork`}
+                      alt=""
+                      className="size-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : item.kind !== "upload" && item.artworkUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={item.artworkUrl}
                       alt=""
                       className="size-full object-cover"
                       loading="lazy"
@@ -390,11 +613,19 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
                   )}
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">
-                    {item.title ?? "不明なトラック"}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold">
+                      {item.title ?? "不明なトラック"}
+                    </p>
+                    {item.kind !== "upload" ? (
+                      <span className="shrink-0 rounded-full bg-dopa-800 px-2 py-0.5 text-[9px] font-bold text-zinc-300">
+                        {KIND_LABELS[item.kind]}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="truncate text-xs text-zinc-400">
                     {item.artist ?? "アーティスト不明"} ・ {formatDuration(item.durationSec)}
+                    {item.kind === "apple" && item.previewUrl ? " ・ 試聴" : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">

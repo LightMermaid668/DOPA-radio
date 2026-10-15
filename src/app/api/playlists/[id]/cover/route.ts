@@ -16,16 +16,22 @@ export async function GET(
   }
 
   const items = await db
-    .select({ artworkKey: tracks.artworkKey })
+    .select({ artworkKey: tracks.artworkKey, externalMeta: playlistItems.externalMeta })
     .from(playlistItems)
-    .innerJoin(tracks, eq(playlistItems.trackId, tracks.id))
+    .leftJoin(tracks, eq(playlistItems.trackId, tracks.id))
     .where(eq(playlistItems.playlistId, id))
     .orderBy(asc(playlistItems.position));
 
   const artworkKey = items.find((item) => item.artworkKey)?.artworkKey;
-  if (!artworkKey) {
-    return new NextResponse(null, { status: 404 });
+  if (artworkKey) {
+    return NextResponse.redirect(await presignGet(artworkKey), 302);
   }
 
-  return NextResponse.redirect(await presignGet(artworkKey), 302);
+  const externalArtwork = items.find((item) => item.externalMeta?.artworkUrl)?.externalMeta
+    ?.artworkUrl;
+  if (externalArtwork) {
+    return NextResponse.redirect(externalArtwork, 302);
+  }
+
+  return new NextResponse(null, { status: 404 });
 }

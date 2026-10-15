@@ -23,16 +23,32 @@ export default async function PlaylistOgImage({
     const playlist = await db.query.playlists.findFirst({ where: eq(playlists.id, id) });
     if (playlist && playlist.visibility !== "private") {
       const items = await db
-        .select({ artworkKey: tracks.artworkKey })
+        .select({
+          artworkKey: tracks.artworkKey,
+          externalMeta: playlistItems.externalMeta,
+        })
         .from(playlistItems)
-        .innerJoin(tracks, eq(playlistItems.trackId, tracks.id))
+        .leftJoin(tracks, eq(playlistItems.trackId, tracks.id))
         .where(eq(playlistItems.playlistId, id))
         .orderBy(asc(playlistItems.position));
       trackCount = items.length;
+
       const artworkKey = items.find((item) => item.artworkKey)?.artworkKey;
       if (artworkKey) {
         const buffer = await getObjectBuffer(artworkKey);
         artworkDataUrl = `data:image/webp;base64,${buffer.toString("base64")}`;
+      } else {
+        const externalArtwork = items.find(
+          (item) => item.externalMeta?.artworkUrl,
+        )?.externalMeta?.artworkUrl;
+        if (externalArtwork) {
+          const res = await fetch(externalArtwork, { cache: "no-store" });
+          if (res.ok) {
+            const buffer = Buffer.from(await res.arrayBuffer());
+            const contentType = res.headers.get("content-type") ?? "image/jpeg";
+            artworkDataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
+          }
+        }
       }
     }
   } catch (error) {

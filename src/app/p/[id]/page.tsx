@@ -63,7 +63,9 @@ export default async function PublicPlaylistPage({
   const rows = await db
     .select({
       itemId: playlistItems.id,
+      kind: playlistItems.kind,
       trackId: playlistItems.trackId,
+      externalMeta: playlistItems.externalMeta,
       title: tracks.title,
       artist: tracks.artist,
       durationSec: tracks.durationSec,
@@ -75,18 +77,54 @@ export default async function PublicPlaylistPage({
     .where(eq(playlistItems.playlistId, playlist.id))
     .orderBy(asc(playlistItems.position));
 
-  const playableTracks: PublicTrack[] = rows
-    .filter(
-      (row) => row.trackId && row.status === "ready" && row.title,
-    )
-    .map((row) => ({
-      id: row.trackId as string,
-      title: row.title as string,
-      artist: row.artist,
-      durationSec: row.durationSec,
-    }));
+  const displayItems = rows.map((row) => ({
+    itemId: row.itemId,
+    kind: row.kind,
+    trackId: row.trackId,
+    status: row.status,
+    hasArtwork: Boolean(row.artworkKey),
+    title: row.title ?? row.externalMeta?.title ?? null,
+    artist: row.artist ?? row.externalMeta?.artist ?? null,
+    durationSec:
+      row.durationSec ??
+      (row.externalMeta?.durationMs != null
+        ? Math.round(row.externalMeta.durationMs / 1000)
+        : null),
+    artworkUrl: row.externalMeta?.artworkUrl ?? null,
+    deepLink: row.externalMeta?.deepLink ?? null,
+    previewUrl: row.externalMeta?.previewUrl ?? null,
+  }));
 
-  const hasCover = rows.some((row) => row.artworkKey);
+  const playableTracks: PublicTrack[] = displayItems
+    .map((item): PublicTrack | null => {
+      if (item.kind === "upload") {
+        if (!item.trackId || item.status !== "ready") return null;
+        return {
+          id: item.trackId,
+          kind: "upload" as const,
+          title: item.title ?? "無題のトラック",
+          artist: item.artist,
+          durationSec: item.durationSec,
+          artworkUrl: item.hasArtwork ? `/api/tracks/${item.trackId}/artwork` : null,
+        };
+      }
+      if (!item.title) return null;
+      return {
+        id: `${item.kind}:${item.itemId}`,
+        kind: item.kind,
+        title: item.title,
+        artist: item.artist,
+        durationSec: item.durationSec,
+        artworkUrl: item.artworkUrl,
+        previewUrl: item.previewUrl,
+        deepLink: item.deepLink,
+      };
+    })
+    .filter((track): track is PublicTrack => track !== null);
+
+  const hasCover =
+    displayItems.some((item) => item.kind === "upload" && item.hasArtwork) ||
+    displayItems.some((item) => item.artworkUrl);
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-6">
@@ -131,23 +169,34 @@ export default async function PublicPlaylistPage({
       </section>
 
       <ul className="flex flex-col gap-1 pb-16">
-        {rows.map((row, index) => (
+        {displayItems.map((item, index) => (
           <li
-            key={row.itemId}
+            key={item.itemId}
             className={cn(
               "flex items-center gap-3 rounded-xl px-3 py-2",
-              row.status === "ready" ? "bg-dopa-900" : "bg-dopa-900/40",
+              item.kind === "upload" && !item.hasArtwork && !item.title
+                ? "bg-dopa-900/40"
+                : "bg-dopa-900",
             )}
           >
             <span className="w-5 shrink-0 text-right text-xs text-zinc-500">{index + 1}</span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{row.title ?? "不明なトラック"}</p>
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-semibold">
+                  {item.title ?? "不明なトラック"}
+                </p>
+                {item.kind !== "upload" ? (
+                  <span className="shrink-0 rounded-full bg-dopa-800 px-2 py-0.5 text-[9px] font-bold text-zinc-300">
+                    {item.kind === "apple" ? "Apple Music" : "Spotify"}
+                  </span>
+                ) : null}
+              </div>
               <p className="truncate text-xs text-zinc-400">
-                {row.artist ?? "アーティスト不明"}
+                {item.artist ?? "アーティスト不明"}
               </p>
             </div>
             <span className="shrink-0 text-xs text-zinc-500">
-              {formatDuration(row.durationSec)}
+              {formatDuration(item.durationSec)}
             </span>
           </li>
         ))}

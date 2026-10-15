@@ -72,6 +72,7 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     usePlayer.getState().playQueue(
       readyTracks.map((track) => ({
         id: track.id,
+        kind: "upload" as const,
         title: track.title,
         artist: track.artist,
         durationSec: track.durationSec,

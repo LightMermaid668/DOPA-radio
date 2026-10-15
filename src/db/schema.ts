@@ -90,10 +90,12 @@ export const playlistItems = pgTable(
     externalMeta: jsonb("external_meta").$type<{
       title?: string;
       artist?: string;
+      album?: string;
       artworkUrl?: string;
       deepLink?: string;
       previewUrl?: string;
       durationMs?: number;
+      uri?: string;
     }>(),
     position: doublePrecision("position").notNull(),
     addedBy: text("added_by").references(() => user.id, { onDelete: "set null" }),

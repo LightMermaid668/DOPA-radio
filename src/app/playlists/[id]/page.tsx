@@ -40,6 +40,7 @@ export default async function PlaylistPage({
       itemId: playlistItems.id,
       kind: playlistItems.kind,
       trackId: playlistItems.trackId,
+      externalMeta: playlistItems.externalMeta,
       title: tracks.title,
       artist: tracks.artist,
       durationSec: tracks.durationSec,
@@ -55,11 +56,18 @@ export default async function PlaylistPage({
     itemId: row.itemId,
     kind: row.kind,
     trackId: row.trackId,
-    title: row.title,
-    artist: row.artist,
-    durationSec: row.durationSec,
+    title: row.title ?? row.externalMeta?.title ?? null,
+    artist: row.artist ?? row.externalMeta?.artist ?? null,
+    durationSec:
+      row.durationSec ??
+      (row.externalMeta?.durationMs != null
+        ? Math.round(row.externalMeta.durationMs / 1000)
+        : null),
     status: row.status,
     hasArtwork: Boolean(row.artworkKey),
+    artworkUrl: row.externalMeta?.artworkUrl ?? null,
+    deepLink: row.externalMeta?.deepLink ?? null,
+    previewUrl: row.externalMeta?.previewUrl ?? null,
   }));
 
   const data: PlaylistDetailData = {

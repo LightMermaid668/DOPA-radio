@@ -14,10 +14,13 @@ const PITCH_SEMITONES_KEY = "dopa:pitch-semitones";
 
 export type PlayerTrack = {
   id: string;
+  kind: "upload" | "apple" | "spotify";
   title: string;
   artist: string | null;
   durationSec: number | null;
   artworkUrl: string | null;
+  previewUrl?: string | null;
+  deepLink?: string | null;
 };
 
 type PlayerState = {
@@ -145,16 +148,46 @@ function startTrack(
   const play = opts?.play ?? true;
   const position = opts?.position ?? 0;
 
-  if (semitones !== 0) {
-    startTrackWithPitch(track, rate, preservesPitch, semitones, position, play);
+  if (track.kind === "spotify") {
+    getAudio()?.pause();
+    usePlayer.setState({
+      isPlaying: false,
+      playbackError: null,
+      playbackNotice: "Spotifyの曲は「アプリで開く」からSpotifyで再生してください",
+    });
+    return;
+  }
+
+  const effectivePitch = track.kind === "upload" ? semitones : 0;
+
+  if (effectivePitch !== 0) {
+    startTrackWithPitch(track, rate, preservesPitch, effectivePitch, position, play);
     return;
   }
 
   const audio = getAudio();
   if (!audio) return;
+
+  let src: string;
+  if (track.kind === "apple") {
+    if (!track.previewUrl) {
+      audio.pause();
+      usePlayer.setState({
+        isPlaying: false,
+        playbackError: null,
+        playbackNotice:
+          "この曲は試聴できません。「アプリで開く」から Apple Music で再生してください",
+      });
+      return;
+    }
+    src = track.previewUrl;
+  } else {
+    src = trackSrc(track.id);
+  }
+
   fallbackTrackId = null;
   usePlayer.setState({ playbackError: null, playbackNotice: null });
-  audio.src = trackSrc(track.id);
+  audio.src = src;
   audio.load();
   applyPlaybackSettings(audio, { rate, preservesPitch });
   if (position > 0) {
@@ -183,6 +216,7 @@ export function handleAudioError(audio: HTMLAudioElement) {
   if (
     isFallbackable &&
     pitchSemitones === 0 &&
+    track.kind === "upload" &&
     isIos() &&
     fallbackTrackId !== track.id
   ) {

@@ -69,6 +69,12 @@ export default async function LibraryPage() {
           <Link href="/upload" className={cn(buttonVariants({ size: "sm" }))}>
             アップロード
           </Link>
+          <Link
+            href="/settings"
+            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+          >
+            設定
+          </Link>
           <SignOutButton />
         </div>
       </header>

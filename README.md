@@ -68,7 +68,8 @@ docker compose up -d postgres garage
 - [x] フェーズ0: 基盤（認証・PWA・インフラ）
 - [x] フェーズ1: アップロード + ffmpeg → AAC/HLS 変換 + 倍速プレイヤー
 - [x] フェーズ2: プレイリスト + 共有（OG画像・公開ページ）
-- [ ] フェーズ3: Apple Music / Spotify 連携（ハンドオフ）
+- [x] フェーズ3: Apple Music / Spotify 連携（検索・追加・試聴・ハンドオフ）
+- [ ] フェーズ3.5: Spotifyキュー一括投入（Connect連携の強化）
 - [ ] フェーズ4: ドパモード（無限自動再生）+ 通報 / 管理
 - [ ] フェーズ5: バックアップ / 監視 / クォータ
 - [ ] 将来: ネイティブアプリ（MusicKit native で混在自動キュー）

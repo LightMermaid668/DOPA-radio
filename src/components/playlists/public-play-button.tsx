@@ -5,14 +5,9 @@ import { LogIn, Play } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
-import { usePlayer } from "@/stores/player";
+import { usePlayer, type PlayerTrack } from "@/stores/player";
 
-export type PublicTrack = {
-  id: string;
-  title: string;
-  artist: string | null;
-  durationSec: number | null;
-};
+export type PublicTrack = PlayerTrack;
 
 export function PublicPlayButton({
   playlistId,
@@ -44,16 +39,7 @@ export function PublicPlayButton({
       disabled={tracks.length === 0}
       onClick={() => {
         if (tracks.length === 0) return;
-        usePlayer.getState().playQueue(
-          tracks.map((track) => ({
-            id: track.id,
-            title: track.title,
-            artist: track.artist,
-            durationSec: track.durationSec,
-            artworkUrl: `/api/tracks/${track.id}/artwork`,
-          })),
-          0,
-        );
+        usePlayer.getState().playQueue(tracks, 0);
       }}
     >
       <Play className="size-4" />

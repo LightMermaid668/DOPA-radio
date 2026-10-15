@@ -151,9 +151,30 @@ export function PlayerBar() {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{track.title}</p>
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-semibold">{track.title}</p>
+                {track.kind !== "upload" ? (
+                  <span className="shrink-0 rounded-full bg-dopa-800 px-2 py-0.5 text-[9px] font-bold text-zinc-300">
+                    {track.kind === "apple" ? "Apple Music" : "Spotify"}
+                    {track.kind === "apple" && track.previewUrl ? "・試聴" : ""}
+                  </span>
+                ) : null}
+              </div>
               <p className="truncate text-xs text-zinc-400">
                 {track.artist ?? "アーティスト不明"}
+                {track.deepLink && track.kind !== "upload" ? (
+                  <>
+                    {" ・ "}
+                    <a
+                      href={track.deepLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent underline underline-offset-2"
+                    >
+                      アプリで開く
+                    </a>
+                  </>
+                ) : null}
               </p>
             </div>
 

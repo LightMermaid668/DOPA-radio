@@ -150,7 +150,6 @@ docker compose logs -f web
 - [ ] `docker compose ps` で全サービスが healthy / running
 
 ## 8. 運用
-
 ### ブランチとデプロイの流れ
 
 ```
@@ -189,6 +188,23 @@ cd /opt/dopa-radio && git log --oneline -1
 - `garage.toml` は deploy.sh が初回に自動生成します（git 管理外・シークレット入り）
 - バックアップ（PBS + オフサイト）はフェーズ5で構築。**それまで音源のバックアップは手動で**
 - 停電・回線断でサービスは停止する（自宅サーバーの宿命）。Cloudflare 側は 502/1033 を返す
+
+### Spotify連携の設定（任意）
+
+未設定でもアプリは動きます（Spotifyタブに案内が出るだけ）。使う場合:
+
+1. https://developer.spotify.com/dashboard で **Create app**
+2. Redirect URI に `https://dopa-radio.sosukeiwasaki.f5.si/api/integrations/spotify/callback` を追加
+3. 発行された Client ID / Client secret を LXC の `.env` に設定:
+   ```
+   SPOTIFY_CLIENT_ID=...
+   SPOTIFY_CLIENT_SECRET=...
+   ```
+4. `systemctl start dopa-radio-deploy.service`（または `docker compose up -d web`）
+5. アプリの **設定 → Spotifyと連携する** から接続
+
+> - 開発モードのSpotifyアプリは**テストユーザー25人まで**。ユーザーが増えたらQuota拡張を申請
+> - 再生はSpotifyアプリ側（Premium推奨）。DOPA-radio内では検索・追加・「アプリで開く」のみ
 
 ### トラブルシューティング
 
