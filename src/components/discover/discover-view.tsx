@@ -3,7 +3,9 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
-import { ListMusic, Play } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { ListMusic, Play, RefreshCw, Search } from "lucide-react";
 
 import { SaveTrackButton } from "@/components/playlists/save-track-button";
 import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
@@ -30,6 +32,8 @@ export function DiscoverView({
 }) {
   const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
   const playerIsPlaying = usePlayer((s) => s.isPlaying);
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
 
   function playFrom(id: string) {
     const index = tracks.findIndex((track) => track.id === id);
@@ -51,6 +55,26 @@ export function DiscoverView({
 
   return (
     <div className="flex flex-col gap-8 pb-8">
+      <div className="flex items-center gap-2">
+        <Link
+          href="/search"
+          className="flex h-10 flex-1 items-center gap-2 rounded-xl border border-dopa-700 bg-dopa-900 px-3 text-sm text-zinc-500 hover:border-dopa-600 hover:text-zinc-400"
+        >
+          <Search className="size-4 shrink-0" />
+          曲・プレイリストを検索…
+        </Link>
+        <button
+          type="button"
+          onClick={() => startRefresh(() => router.refresh())}
+          disabled={refreshing}
+          className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-dopa-700 px-3 text-xs font-semibold text-zinc-300 hover:bg-dopa-800 disabled:opacity-60"
+          aria-label="最新の内容に更新"
+        >
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+          更新
+        </button>
+      </div>
+
       <section>
         <h2 className="mb-2 text-sm font-bold text-zinc-300">公開プレイリスト</h2>
         {playlists.length === 0 ? (
