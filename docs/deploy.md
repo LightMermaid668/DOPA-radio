@@ -184,7 +184,8 @@ cd /opt/dopa-radio && git log --oneline -1
 
 | 症状 | 確認 |
 |---|---|
-| 502 Bad Gateway | `docker compose logs web`（ビルド失敗・起動失敗） |
+| 502 Bad Gateway | `docker compose ps` と `docker compose logs cloudflared`（トークン・宛先 `http://caddy:80` の設定） |
+| `Provided Tunnel token is not valid` | `.env` の `CLOUDFLARE_TUNNEL_TOKEN` に、ダッシュボードの **`--token` の後ろの文字列のみ**（`eyJ`で始まる）を設定。`--token` や引用符・空白を含めない |
 | ログインで `redirect_uri_mismatch` | Google Console のリダイレクト URI を確認 |
 | 登録できない | `docker compose logs postgres web`（マイグレーション成功しているか） |
 | 1033 Tunnel error | `cloudflared` トークン・トンネル起動状態を確認 |
