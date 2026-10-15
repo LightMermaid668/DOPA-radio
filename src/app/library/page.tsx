@@ -32,6 +32,9 @@ export default async function LibraryPage() {
       transcodeError: tracks.transcodeError,
       artworkKey: tracks.artworkKey,
       pinnedAt: tracks.pinnedAt,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
+      chorusSource: tracks.chorusSource,
     })
     .from(tracks)
     .where(eq(tracks.ownerId, user.id))
@@ -50,6 +53,9 @@ export default async function LibraryPage() {
     transcodeError: row.transcodeError,
     hasArtwork: Boolean(row.artworkKey),
     pinned: Boolean(row.pinnedAt),
+    chorusStartSec: row.chorusStartSec,
+    chorusEndSec: row.chorusEndSec,
+    chorusSource: row.chorusSource,
   }));
 
   return (

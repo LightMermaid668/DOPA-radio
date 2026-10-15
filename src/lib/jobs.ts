@@ -12,6 +12,7 @@ export function getBoss(): Promise<PgBoss> {
       await boss.start();
       await boss.createQueue("transcode");
       await boss.createQueue("pitch");
+      await boss.createQueue("chorus");
       return boss;
     })();
   }
@@ -29,5 +30,14 @@ export async function enqueuePitchVariant(trackId: string, semitones: number): P
     "pitch",
     { trackId, semitones },
     { expireInSeconds: 1800, retryLimit: 1, singletonKey: `pitch-${trackId}-${semitones}` },
+  );
+}
+
+export async function enqueueChorusDetection(trackId: string): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(
+    "chorus",
+    { trackId },
+    { expireInSeconds: 1800, retryLimit: 1, singletonKey: `chorus-${trackId}` },
   );
 }

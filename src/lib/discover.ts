@@ -14,6 +14,8 @@ export type DiscoverTrack = {
   playCount: number;
   saved: boolean;
   own: boolean;
+  chorusStartSec: number | null;
+  chorusEndSec: number | null;
 };
 
 export type DiscoverPlaylist = {
@@ -38,6 +40,8 @@ export async function getDiscoverData(viewer: { id: string } | null): Promise<{
       ownerId: tracks.ownerId,
       ownerName: userTable.name,
       playCount: tracks.playCount,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
     })
     .from(tracks)
     .leftJoin(userTable, eq(tracks.ownerId, userTable.id))
@@ -72,6 +76,8 @@ export async function getDiscoverData(viewer: { id: string } | null): Promise<{
     playCount: row.playCount,
     saved: savedIds.has(row.id),
     own: viewer?.id === row.ownerId,
+    chorusStartSec: row.chorusStartSec,
+    chorusEndSec: row.chorusEndSec,
   }));
 
   const playlistRows = await db

@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   Radio,
+  Scissors,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -47,6 +48,7 @@ function formatBoostDb(level: number): string {
 export function PlayerBar() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chorusGuardRef = useRef<string | null>(null);
   const [panel, setPanel] = useState<"speed" | "sound" | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
 
@@ -61,6 +63,8 @@ export function PlayerBar() {
   const playbackError = usePlayer((s) => s.playbackError);
   const playbackNotice = usePlayer((s) => s.playbackNotice);
   const dopaMode = usePlayer((s) => s.dopaMode);
+  const chorusOnly = usePlayer((s) => s.chorusOnly);
+  const setChorusOnly = usePlayer((s) => s.setChorusOnly);
   const eqEnabled = usePlayer((s) => s.eqEnabled);
   const eqPreset = usePlayer((s) => s.eqPreset);
   const eqBass = usePlayer((s) => s.eqBass);
@@ -99,8 +103,26 @@ export function PlayerBar() {
     const audio = getAudio();
     if (!audio) return;
 
-    const handleTime = () =>
+    const handleTime = () => {
+      const state = usePlayer.getState();
+      const current = state.queue[state.index];
+      // サビだけモード: サビ終端に達したら次の曲へ
+      if (
+        state.chorusOnly &&
+        state.isPlaying &&
+        current?.kind === "upload" &&
+        current.chorusEndSec != null &&
+        audio.currentTime >= current.chorusEndSec - 0.08
+      ) {
+        const key = `${current.id}:${state.index}:${state.queue.length}`;
+        if (chorusGuardRef.current !== key) {
+          chorusGuardRef.current = key;
+          state.next();
+          return;
+        }
+      }
       usePlayer.setState({ progress: audio.currentTime, duration: audio.duration || 0 });
+    };
     const handlePlay = () => {
       applyPlaybackSettings(audio, {
         rate: usePlayer.getState().rate,
@@ -617,16 +639,31 @@ export function PlayerBar() {
 
           <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
             <span className="w-9 text-right">{formatTime(progress)}</span>
-            <input
-              type="range"
-              min={0}
-              max={Math.max(duration, 0)}
-              step={0.1}
-              value={Math.min(progress, duration || 0)}
-              onChange={(e) => seekTo(Number(e.target.value))}
-              className="h-1 w-full cursor-pointer accent-fuchsia-500"
-              aria-label="シーク"
-            />
+            <div className="relative flex-1">
+              {track.kind === "upload" &&
+              track.chorusStartSec != null &&
+              track.chorusEndSec != null &&
+              duration > 0 ? (
+                <div
+                  className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent/40"
+                  style={{
+                    left: `${(track.chorusStartSec / duration) * 100}%`,
+                    width: `${((track.chorusEndSec - track.chorusStartSec) / duration) * 100}%`,
+                  }}
+                  aria-hidden
+                />
+              ) : null}
+              <input
+                type="range"
+                min={0}
+                max={Math.max(duration, 0)}
+                step={0.1}
+                value={Math.min(progress, duration || 0)}
+                onChange={(e) => seekTo(Number(e.target.value))}
+                className="relative h-1 w-full cursor-pointer accent-fuchsia-500"
+                aria-label="シーク"
+              />
+            </div>
             <span className="w-9">{formatTime(duration)}</span>
           </div>
 
@@ -688,6 +725,19 @@ export function PlayerBar() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setChorusOnly(!chorusOnly)}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold",
+                    chorusOnly
+                      ? "border-accent text-accent"
+                      : "border-dopa-700 text-zinc-200 hover:bg-dopa-800",
+                  )}
+                >
+                  <Scissors className="size-3.5" />
+                  サビだけ
+                </button>
+                <button
+                  type="button"
                   onClick={() => setQueueOpen(false)}
                   className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800"
                   aria-label="閉じる"
@@ -697,9 +747,10 @@ export function PlayerBar() {
               </div>
             </div>
 
-            {dopaMode ? (
+            {dopaMode || chorusOnly ? (
               <p className="px-5 pb-2 text-[11px] text-zinc-500">
-                キューが終わると、似てる曲を自動で追加して流し続けます
+                {dopaMode ? "キューが終わると似てる曲を自動追加。" : ""}
+                {chorusOnly ? "サビ範囲が設定された曲はサビの部分だけ再生します。" : ""}
               </p>
             ) : null}
 

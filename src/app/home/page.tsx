@@ -35,6 +35,9 @@ export default async function HomePage() {
       transcodeError: tracks.transcodeError,
       artworkKey: tracks.artworkKey,
       pinnedAt: tracks.pinnedAt,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
+      chorusSource: tracks.chorusSource,
     })
     .from(tracks)
     .where(eq(tracks.ownerId, user.id))
@@ -53,6 +56,9 @@ export default async function HomePage() {
     transcodeError: row.transcodeError,
     hasArtwork: Boolean(row.artworkKey),
     pinned: Boolean(row.pinnedAt),
+    chorusStartSec: row.chorusStartSec,
+    chorusEndSec: row.chorusEndSec,
+    chorusSource: row.chorusSource,
   }));
 
   const playlistRows = await db
@@ -84,6 +90,8 @@ export default async function HomePage() {
       artworkKey: tracks.artworkKey,
       status: tracks.status,
       ownerName: userTable.name,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
     })
     .from(savedTracks)
     .innerJoin(tracks, eq(savedTracks.trackId, tracks.id))
@@ -99,6 +107,8 @@ export default async function HomePage() {
     hasArtwork: Boolean(row.artworkKey),
     ready: row.status === "ready",
     ownerName: row.ownerName,
+    chorusStartSec: row.chorusStartSec,
+    chorusEndSec: row.chorusEndSec,
   }));
 
   const discover = await getDiscoverData(user);

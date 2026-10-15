@@ -31,6 +31,8 @@ export type SavedTrackView = {
   hasArtwork: boolean;
   ready: boolean;
   ownerName: string | null;
+  chorusStartSec: number | null;
+  chorusEndSec: number | null;
 };
 
 const VISIBILITY_LABELS: Record<HomePlaylist["visibility"], string> = {
@@ -71,6 +73,8 @@ export function HomeView({
         artist: track.artist,
         durationSec: track.durationSec,
         artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+        chorusStartSec: track.chorusStartSec,
+        chorusEndSec: track.chorusEndSec,
       })),
       index,
     );
@@ -96,6 +100,8 @@ export function HomeView({
         artist: track.artist,
         durationSec: track.durationSec,
         artworkUrl: track.hasArtwork ? `/api/tracks/${track.trackId}/artwork` : null,
+        chorusStartSec: track.chorusStartSec,
+        chorusEndSec: track.chorusEndSec,
       })),
       index,
     );

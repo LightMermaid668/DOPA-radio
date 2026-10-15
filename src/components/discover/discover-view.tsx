@@ -38,6 +38,8 @@ export function DiscoverView({
         artist: track.artist,
         durationSec: track.durationSec,
         artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+        chorusStartSec: track.chorusStartSec,
+        chorusEndSec: track.chorusEndSec,
       })),
       index,
     );

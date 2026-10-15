@@ -47,6 +47,8 @@ export default async function PlaylistPage({
       durationSec: tracks.durationSec,
       status: tracks.status,
       artworkKey: tracks.artworkKey,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
     })
     .from(playlistItems)
     .leftJoin(tracks, eq(playlistItems.trackId, tracks.id))
@@ -70,6 +72,8 @@ export default async function PlaylistPage({
     artworkUrl: row.externalMeta?.artworkUrl ?? null,
     deepLink: row.externalMeta?.deepLink ?? null,
     previewUrl: row.externalMeta?.previewUrl ?? null,
+    chorusStartSec: row.chorusStartSec,
+    chorusEndSec: row.chorusEndSec,
   }));
 
   const data: PlaylistDetailData = {

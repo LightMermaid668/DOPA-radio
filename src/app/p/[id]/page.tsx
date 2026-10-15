@@ -78,6 +78,8 @@ export default async function PublicPlaylistPage({
       durationSec: tracks.durationSec,
       status: tracks.status,
       artworkKey: tracks.artworkKey,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
     })
     .from(playlistItems)
     .leftJoin(tracks, eq(playlistItems.trackId, tracks.id))
@@ -122,6 +124,8 @@ export default async function PublicPlaylistPage({
     artworkUrl: row.externalMeta?.artworkUrl ?? null,
     deepLink: row.externalMeta?.deepLink ?? null,
     previewUrl: row.externalMeta?.previewUrl ?? null,
+    chorusStartSec: row.chorusStartSec,
+    chorusEndSec: row.chorusEndSec,
   }));
 
   const playableTracks: PublicTrack[] = displayItems
@@ -135,6 +139,8 @@ export default async function PublicPlaylistPage({
           artist: item.artist,
           durationSec: item.durationSec,
           artworkUrl: item.hasArtwork ? `/api/tracks/${item.trackId}/artwork` : null,
+          chorusStartSec: item.chorusStartSec,
+          chorusEndSec: item.chorusEndSec,
         };
       }
       if (!item.title) return null;

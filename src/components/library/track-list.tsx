@@ -17,11 +17,13 @@ import {
   Pin,
   Play,
   Radio,
+  Scissors,
   Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
 
+import { ChorusEditor } from "@/components/library/chorus-editor";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/stores/player";
@@ -39,6 +41,9 @@ export type LibraryTrack = {
   transcodeError: string | null;
   hasArtwork: boolean;
   pinned: boolean;
+  chorusStartSec: number | null;
+  chorusEndSec: number | null;
+  chorusSource: string | null;
 };
 
 const VISIBILITY_LABELS: Record<LibraryTrack["visibility"], string> = {
@@ -72,6 +77,7 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   const [editArtist, setEditArtist] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [chorusTrack, setChorusTrack] = useState<LibraryTrack | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkVisibility, setBulkVisibility] = useState<LibraryTrack["visibility"]>("public");
@@ -122,6 +128,8 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
         artist: track.artist,
         durationSec: track.durationSec,
         artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+        chorusStartSec: track.chorusStartSec,
+        chorusEndSec: track.chorusEndSec,
       })),
       index,
     );
@@ -460,6 +468,10 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
         })}
       </ul>
 
+      {chorusTrack ? (
+        <ChorusEditor track={chorusTrack} onClose={() => setChorusTrack(null)} />
+      ) : null}
+
       {menu && typeof document !== "undefined"
         ? createPortal(
             <>
@@ -495,7 +507,11 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                       title: track.title,
                       artist: track.artist,
                       durationSec: track.durationSec,
-                      artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+                      artworkUrl: track.hasArtwork
+                        ? `/api/tracks/${track.id}/artwork`
+                        : null,
+                      chorusStartSec: track.chorusStartSec,
+                      chorusEndSec: track.chorusEndSec,
                     });
                   }}
                   disabled={menu.track.status !== "ready"}
@@ -528,6 +544,19 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                 >
                   <Radio className="size-3.5" />
                   似てる曲を追加（ドパモード）
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const track = menu.track;
+                    setMenu(null);
+                    setChorusTrack(track);
+                  }}
+                  disabled={menu.track.status !== "ready"}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800 disabled:opacity-40"
+                >
+                  <Scissors className="size-3.5" />
+                  サビ範囲を設定
                 </button>
 
                 <div className="my-1 h-px bg-dopa-800" />

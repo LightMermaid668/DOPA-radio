@@ -44,6 +44,8 @@ export async function GET(request: Request) {
       durationSec: tracks.durationSec,
       artworkKey: tracks.artworkKey,
       playCount: tracks.playCount,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
     })
     .from(tracks)
     .where(and(...conditions))
@@ -76,6 +78,8 @@ export async function GET(request: Request) {
     artist: entry.candidate.artist,
     durationSec: entry.candidate.durationSec,
     hasArtwork: Boolean(entry.candidate.artworkKey),
+    chorusStartSec: entry.candidate.chorusStartSec,
+    chorusEndSec: entry.candidate.chorusEndSec,
   }));
 
   return NextResponse.json({ tracks: picked });

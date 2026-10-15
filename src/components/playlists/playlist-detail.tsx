@@ -38,6 +38,8 @@ export type PlaylistItemData = {
   artworkUrl: string | null;
   deepLink: string | null;
   previewUrl: string | null;
+  chorusStartSec: number | null;
+  chorusEndSec: number | null;
 };
 
 export type PlaylistDetailData = {
@@ -77,6 +79,8 @@ function toPlayerTrack(item: PlaylistItemData): PlayerTrack | null {
       artist: item.artist,
       durationSec: item.durationSec,
       artworkUrl: item.hasArtwork ? `/api/tracks/${item.trackId}/artwork` : null,
+      chorusStartSec: item.chorusStartSec,
+      chorusEndSec: item.chorusEndSec,
     };
   }
   if (!item.title) return null;

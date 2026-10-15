@@ -16,6 +16,7 @@ import {
   putObjectBuffer,
   putObjectFile,
 } from "../../src/lib/s3";
+import { detectChorus } from "../lib/chorus";
 import { ffprobe } from "../lib/ffprobe";
 
 const execFileAsync = promisify(execFile);
@@ -122,6 +123,19 @@ export async function transcodeTrack(trackId: string): Promise<void> {
       await putObjectBuffer(artworkKey, artworkBuffer, "image/webp");
     }
 
+    // サビ位置の自動検出（失敗しても変換自体は成功扱い）
+    let chorusStartSec: number | null = null;
+    let chorusEndSec: number | null = null;
+    try {
+      const chorus = await detectChorus(originalPath, Math.round(duration));
+      if (chorus) {
+        chorusStartSec = chorus.start;
+        chorusEndSec = chorus.end;
+      }
+    } catch (error) {
+      console.warn(`[transcode] chorus detection failed (${trackId}):`, error);
+    }
+
     await db
       .update(tracks)
       .set({
@@ -135,6 +149,9 @@ export async function transcodeTrack(trackId: string): Promise<void> {
         artist,
         album,
         genre,
+        chorusStartSec,
+        chorusEndSec,
+        chorusSource: chorusStartSec !== null ? "auto" : null,
         updatedAt: new Date(),
       })
       .where(eq(tracks.id, trackId));

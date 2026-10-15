@@ -21,6 +21,7 @@ const RATE_KEY = "dopa:playback-rate";
 const PITCH_KEY = "dopa:preserves-pitch";
 const PITCH_SEMITONES_KEY = "dopa:pitch-semitones";
 const DOPA_MODE_KEY = "dopa:dopa-mode";
+const CHORUS_ONLY_KEY = "dopa:chorus-only";
 const EQ_ENABLED_KEY = "dopa:eq-enabled";
 const EQ_PRESET_KEY = "dopa:eq-preset";
 const EQ_BASS_KEY = "dopa:eq-bass";
@@ -37,6 +38,8 @@ export type PlayerTrack = {
   artworkUrl: string | null;
   previewUrl?: string | null;
   deepLink?: string | null;
+  chorusStartSec?: number | null;
+  chorusEndSec?: number | null;
 };
 
 export type EqBand = "bass" | "mid" | "treble";
@@ -53,6 +56,7 @@ type PlayerState = {
   playbackError: string | null;
   playbackNotice: string | null;
   dopaMode: boolean;
+  chorusOnly: boolean;
   eqEnabled: boolean;
   eqPreset: string;
   eqBass: number;
@@ -71,6 +75,7 @@ type PlayerState = {
   setPreservesPitch: (value: boolean) => void;
   setPitchSemitones: (value: number) => void;
   setDopaMode: (value: boolean) => void;
+  setChorusOnly: (value: boolean) => void;
   setEqEnabled: (value: boolean) => void;
   applyEqPreset: (preset: string) => void;
   setEqBand: (band: EqBand, value: number) => void;
@@ -199,8 +204,19 @@ function startTrack(
 
   const effectivePitch = track.kind === "upload" ? semitones : 0;
 
+  // サビだけモード: 通常の頭出し時はサビ開始位置から再生
+  const { chorusOnly } = usePlayer.getState();
+  const chorusStart =
+    chorusOnly &&
+    track.kind === "upload" &&
+    track.chorusStartSec != null &&
+    track.chorusStartSec > 1
+      ? track.chorusStartSec
+      : null;
+  const effectivePosition = position > 3 ? position : (chorusStart ?? position);
+
   if (effectivePitch !== 0) {
-    startTrackWithPitch(track, rate, preservesPitch, effectivePitch, position, play);
+    startTrackWithPitch(track, rate, preservesPitch, effectivePitch, effectivePosition, play);
     return;
   }
 
@@ -229,10 +245,10 @@ function startTrack(
   audio.src = src;
   audio.load();
   applyPlaybackSettings(audio, { rate, preservesPitch });
-  if (position > 0) {
+  if (effectivePosition > 0) {
     const restore = () => {
       audio.removeEventListener("loadedmetadata", restore);
-      audio.currentTime = position;
+      audio.currentTime = effectivePosition;
     };
     audio.addEventListener("loadedmetadata", restore);
   }
@@ -293,6 +309,8 @@ async function fetchRadioTracks(
         artist: string | null;
         durationSec: number | null;
         hasArtwork: boolean;
+        chorusStartSec?: number | null;
+        chorusEndSec?: number | null;
       }>;
     };
     return (body.tracks ?? []).map((track) => ({
@@ -302,6 +320,8 @@ async function fetchRadioTracks(
       artist: track.artist,
       durationSec: track.durationSec,
       artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+      chorusStartSec: track.chorusStartSec ?? null,
+      chorusEndSec: track.chorusEndSec ?? null,
     }));
   } catch {
     return [];
@@ -390,6 +410,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   playbackError: null,
   playbackNotice: null,
   dopaMode: false,
+  chorusOnly: false,
   eqEnabled: false,
   eqPreset: "flat",
   eqBass: 0,
@@ -530,6 +551,16 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   setDopaMode: (value) => {
     persist(DOPA_MODE_KEY, String(value));
     set({ dopaMode: value });
+    // ドパモードON時は「サビだけ」も自動で有効化（サビメドレー体験）
+    if (value && !get().chorusOnly) {
+      persist(CHORUS_ONLY_KEY, "true");
+      set({ chorusOnly: true });
+    }
+  },
+
+  setChorusOnly: (value) => {
+    persist(CHORUS_ONLY_KEY, String(value));
+    set({ chorusOnly: value });
   },
 
   setEqEnabled: (value) => {
@@ -622,6 +653,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       ? Math.max(-12, Math.min(12, Math.round(storedPitch)))
       : 0;
     const dopaMode = localStorage.getItem(DOPA_MODE_KEY) === "true";
+    const chorusOnly = localStorage.getItem(CHORUS_ONLY_KEY) === "true";
     const eqEnabled = localStorage.getItem(EQ_ENABLED_KEY) === "true";
     const eqPreset = localStorage.getItem(EQ_PRESET_KEY) ?? "flat";
     const eqBass = Number(localStorage.getItem(EQ_BASS_KEY) ?? "0") || 0;
@@ -637,6 +669,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       preservesPitch,
       pitchSemitones,
       dopaMode,
+      chorusOnly,
       eqEnabled,
       eqPreset,
       eqBass,

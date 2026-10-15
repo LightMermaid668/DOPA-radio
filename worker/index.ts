@@ -1,10 +1,11 @@
 import { PgBoss, type Job } from "pg-boss";
 
 import { databaseUrl } from "../src/db";
+import { detectTrackChorus } from "./handlers/chorus";
 import { generatePitchVariant } from "./handlers/pitch";
 import { transcodeTrack } from "./handlers/transcode";
 
-const QUEUES = ["transcode", "pitch"] as const;
+const QUEUES = ["transcode", "pitch", "chorus"] as const;
 
 async function main() {
   const boss = new PgBoss({ connectionString: databaseUrl() });
@@ -42,6 +43,19 @@ async function main() {
         console.log(`[worker] pitch start: ${trackId} (${semitones})`);
         await generatePitchVariant(trackId, semitones);
         console.log(`[worker] pitch done: ${trackId} (${semitones})`);
+      }
+    },
+  );
+
+  await boss.work(
+    "chorus",
+    { batchSize: 1, pollingIntervalSeconds: 2 },
+    async (jobs: Job<{ trackId: string }>[]) => {
+      for (const job of jobs) {
+        const { trackId } = job.data;
+        console.log(`[worker] chorus start: ${trackId}`);
+        await detectTrackChorus(trackId);
+        console.log(`[worker] chorus done: ${trackId}`);
       }
     },
   );

@@ -39,6 +39,9 @@ export async function GET(
       hasArtwork: Boolean(track.artworkKey),
       playCount: track.playCount,
       createdAt: track.createdAt,
+      chorusStartSec: track.chorusStartSec,
+      chorusEndSec: track.chorusEndSec,
+      chorusSource: track.chorusSource,
     },
   });
 }
@@ -50,6 +53,8 @@ type PatchBody = {
   genre?: string | null;
   visibility?: string;
   pinned?: boolean;
+  chorusStartSec?: number | null;
+  chorusEndSec?: number | null;
 };
 
 export async function PATCH(
@@ -89,6 +94,30 @@ export async function PATCH(
   }
   if (typeof body.pinned === "boolean") {
     patch.pinnedAt = body.pinned ? new Date() : null;
+  }
+  if (body.chorusStartSec !== undefined || body.chorusEndSec !== undefined) {
+    const start = body.chorusStartSec;
+    const end = body.chorusEndSec;
+    const durationLimit = (track.durationSec ?? Number.MAX_SAFE_INTEGER) + 5;
+    if (start === null && end === null) {
+      patch.chorusStartSec = null;
+      patch.chorusEndSec = null;
+      patch.chorusSource = null;
+    } else if (
+      typeof start === "number" &&
+      typeof end === "number" &&
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      start >= 0 &&
+      end > start &&
+      end <= durationLimit
+    ) {
+      patch.chorusStartSec = Math.round(start);
+      patch.chorusEndSec = Math.round(end);
+      patch.chorusSource = "manual";
+    } else {
+      return NextResponse.json({ error: "サビ範囲が不正です" }, { status: 400 });
+    }
   }
 
   await db.update(tracks).set(patch).where(eq(tracks.id, id));
