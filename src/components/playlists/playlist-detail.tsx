@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { ShareButton } from "@/components/playlists/share-button";
+import { QrShareButton } from "@/components/share/qr-share-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePlayer, type PlayerTrack } from "@/stores/player";
@@ -364,6 +365,7 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
                 曲を追加
               </Button>
               <ShareButton path={`/p/${data.id}`} title={data.title} />
+              <QrShareButton path={`/p/${data.id}`} title={data.title} />
               <select
                 value={data.visibility}
                 onChange={(e) => patchPlaylist({ visibility: e.target.value })}

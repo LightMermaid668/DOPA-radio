@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { playlistItems, playlists, savedTracks, tracks } from "@/db/schema";
 import { user as userTable } from "@/db/auth-schema";
 import { auth } from "@/lib/auth";
+import { getDiscoverData } from "@/lib/discover";
 
 export const metadata: Metadata = { title: "ホーム" };
 export const dynamic = "force-dynamic";
@@ -100,6 +101,8 @@ export default async function HomePage() {
     ownerName: row.ownerName,
   }));
 
+  const discover = await getDiscoverData(user);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
       <AppHeader />
@@ -107,6 +110,9 @@ export default async function HomePage() {
         tracks={libraryTracks}
         playlists={homePlaylists}
         savedTracks={savedTracksView}
+        userId={user.id}
+        userName={user.name}
+        discover={discover}
       />
     </main>
   );

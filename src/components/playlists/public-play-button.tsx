@@ -10,10 +10,10 @@ import { usePlayer, type PlayerTrack } from "@/stores/player";
 export type PublicTrack = PlayerTrack;
 
 export function PublicPlayButton({
-  playlistId,
+  redirectTo,
   tracks,
 }: {
-  playlistId: string;
+  redirectTo: string;
   tracks: PublicTrack[];
 }) {
   const router = useRouter();
@@ -24,7 +24,7 @@ export function PublicPlayButton({
       <Button
         type="button"
         size="lg"
-        onClick={() => router.push(`/login?redirect=/p/${playlistId}`)}
+        onClick={() => router.push(`/login?redirect=${encodeURIComponent(redirectTo)}`)}
       >
         <LogIn className="size-4" />
         ログインして再生

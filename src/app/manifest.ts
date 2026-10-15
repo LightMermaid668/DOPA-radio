@@ -6,6 +6,9 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "DOPA",
     description: "ドパガキのための音楽基地。曲を持ち寄ってプレイリストを共有しよう。",
     start_url: "/start",
+    // Android Chrome: インストール済みPWAがサイト内リンク（共有されたプレイリスト等）を
+    // ブラウザではなくアプリで開けるようにする（iOSは非対応）
+    launch_handler: { client_mode: "navigate-existing" },
     display: "standalone",
     background_color: "#0a0a0c",
     theme_color: "#0a0a0c",

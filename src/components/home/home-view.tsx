@@ -5,11 +5,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookmarkMinus, ListMusic, Music2, PinOff, Play } from "lucide-react";
+import { BookmarkMinus, Compass, ListMusic, Music2, PinOff, Play } from "lucide-react";
 
+import { DiscoverView } from "@/components/discover/discover-view";
 import { TrackList, type LibraryTrack } from "@/components/library/track-list";
 import { CreatePlaylistForm } from "@/components/playlists/create-playlist-form";
 import { ImportPlaylistForm } from "@/components/playlists/import-playlist-form";
+import { QrShareButton } from "@/components/share/qr-share-button";
+import type { DiscoverPlaylist, DiscoverTrack } from "@/lib/discover";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/stores/player";
 
@@ -40,13 +43,19 @@ export function HomeView({
   tracks,
   playlists,
   savedTracks,
+  userId,
+  userName,
+  discover,
 }: {
   tracks: LibraryTrack[];
   playlists: HomePlaylist[];
   savedTracks: SavedTrackView[];
+  userId: string;
+  userName: string;
+  discover: { tracks: DiscoverTrack[]; playlists: DiscoverPlaylist[] };
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"library" | "playlists">("library");
+  const [tab, setTab] = useState<"library" | "playlists" | "discover">("library");
 
   const pinned = tracks.filter((track) => track.pinned && track.status === "ready");
   const playableSaved = savedTracks.filter((track) => track.ready);
@@ -149,32 +158,45 @@ export function HomeView({
         )}
       </section>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
           onClick={() => setTab("library")}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition-colors",
+            "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "library"
               ? "bg-rainbow border-transparent text-dopa-950"
               : "border-dopa-700 bg-dopa-900 text-zinc-300 hover:bg-dopa-800",
           )}
         >
-          <Music2 className="size-4" />
+          <Music2 className="size-4 shrink-0" />
           ライブラリ
         </button>
         <button
           type="button"
           onClick={() => setTab("playlists")}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition-colors",
+            "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "playlists"
               ? "bg-rainbow border-transparent text-dopa-950"
               : "border-dopa-700 bg-dopa-900 text-zinc-300 hover:bg-dopa-800",
           )}
         >
-          <ListMusic className="size-4" />
+          <ListMusic className="size-4 shrink-0" />
           プレイリスト
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("discover")}
+          className={cn(
+            "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
+            tab === "discover"
+              ? "bg-rainbow border-transparent text-dopa-950"
+              : "border-dopa-700 bg-dopa-900 text-zinc-300 hover:bg-dopa-800",
+          )}
+        >
+          <Compass className="size-4 shrink-0" />
+          ディスカバー
         </button>
       </div>
 
@@ -233,11 +255,14 @@ export function HomeView({
             </section>
           ) : null}
           <section>
-            <h2 className="mb-2 text-sm font-bold text-zinc-300">自分の曲</h2>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-zinc-300">自分の曲</h2>
+              <QrShareButton path={`/u/${userId}`} title={`${userName} のライブラリ`} />
+            </div>
             <TrackList tracks={tracks} />
           </section>
         </div>
-      ) : (
+      ) : tab === "playlists" ? (
         <div className="flex flex-col gap-4">
           <CreatePlaylistForm />
           <ImportPlaylistForm />
@@ -267,6 +292,12 @@ export function HomeView({
             </ul>
           )}
         </div>
+      ) : (
+        <DiscoverView
+          tracks={discover.tracks}
+          playlists={discover.playlists}
+          loggedIn
+        />
       )}
     </div>
   );

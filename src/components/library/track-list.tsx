@@ -102,7 +102,10 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     if (!window.confirm(`「${title}」を削除しますか？元に戻せません。`)) return;
     setBusyId(id);
     try {
-      await fetch(`/api/tracks/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/tracks/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        usePlayer.getState().removeTrack(id);
+      }
       router.refresh();
     } finally {
       setBusyId(null);

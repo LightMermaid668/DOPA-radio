@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Logo } from "@/components/logo";
+import { QrScannerButton } from "@/components/share/qr-scanner-button";
 
 export function AppHeader() {
   return (
@@ -11,6 +12,7 @@ export function AppHeader() {
         <Logo />
       </Link>
       <div className="flex items-center gap-0.5">
+        <QrScannerButton />
         <Link
           href="/upload"
           aria-label="アップロード"

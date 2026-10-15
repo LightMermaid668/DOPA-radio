@@ -188,7 +188,7 @@ export default async function PublicPlaylistPage({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <PublicPlayButton playlistId={playlist.id} tracks={playableTracks} />
+          <PublicPlayButton redirectTo={`/p/${playlist.id}`} tracks={playableTracks} />
           <ImportPlaylistButton playlistId={playlist.id} ownerId={playlist.ownerId} />
         </div>
         <p className="text-xs text-zinc-500">再生には会員登録が必要です</p>

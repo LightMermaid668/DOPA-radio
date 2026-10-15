@@ -44,6 +44,7 @@ type PlayerState = {
   setPitchSemitones: (value: number) => void;
   hydrateSettings: () => void;
   retryCurrent: () => void;
+  removeTrack: (trackId: string) => void;
 };
 
 let fallbackTrackId: string | null = null;
@@ -381,5 +382,50 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (!track) return;
     set({ playbackError: null, playbackNotice: null });
     startTrack(track, rate, preservesPitch, pitchSemitones);
+  },
+
+  removeTrack: (trackId) => {
+    const { queue, index, isPlaying, rate, preservesPitch, pitchSemitones } = get();
+    const removeIndex = queue.findIndex((track) => track.id === trackId);
+    if (removeIndex < 0) return;
+
+    const nextQueue = queue.filter((_, position) => position !== removeIndex);
+
+    if (nextQueue.length === 0) {
+      getAudio()?.pause();
+      set({
+        queue: [],
+        index: 0,
+        isPlaying: false,
+        progress: 0,
+        duration: 0,
+        playbackError: null,
+        playbackNotice: null,
+      });
+      return;
+    }
+
+    if (removeIndex < index) {
+      set({ queue: nextQueue, index: index - 1 });
+      return;
+    }
+
+    if (removeIndex > index) {
+      set({ queue: nextQueue });
+      return;
+    }
+
+    const nextIndex = Math.min(index, nextQueue.length - 1);
+    set({
+      queue: nextQueue,
+      index: nextIndex,
+      progress: 0,
+      duration: 0,
+      playbackError: null,
+      playbackNotice: null,
+    });
+    startTrack(nextQueue[nextIndex], rate, preservesPitch, pitchSemitones, {
+      play: isPlaying,
+    });
   },
 }));
