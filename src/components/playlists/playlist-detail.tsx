@@ -288,7 +288,7 @@ export function PlaylistDetail({
     setBusy(true);
     try {
       await fetch(`/api/playlists/${data.id}`, { method: "DELETE" });
-      router.push("/playlists");
+      router.push("/home?tab=playlists");
       router.refresh();
     } finally {
       setBusy(false);

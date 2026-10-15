@@ -43,6 +43,8 @@ const VISIBILITY_LABELS: Record<HomePlaylist["visibility"], string> = {
   public: "公開",
 };
 
+export type HomeTab = "library" | "playlists" | "discover";
+
 export function HomeView({
   tracks,
   playlists,
@@ -50,6 +52,7 @@ export function HomeView({
   userId,
   userName,
   discover,
+  initialTab = "library",
 }: {
   tracks: LibraryTrack[];
   playlists: HomePlaylist[];
@@ -57,9 +60,21 @@ export function HomeView({
   userId: string;
   userName: string;
   discover: { tracks: DiscoverTrack[]; playlists: DiscoverPlaylist[] };
+  initialTab?: HomeTab;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"library" | "playlists" | "discover">("library");
+  const [tab, setTab] = useState<HomeTab>(initialTab);
+
+  function selectTab(next: HomeTab) {
+    setTab(next);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        next === "library" ? "/home" : `/home?tab=${next}`,
+      );
+    }
+  }
 
   const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
   const playerIsPlaying = usePlayer((s) => s.isPlaying);
@@ -239,7 +254,7 @@ export function HomeView({
       <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
-          onClick={() => setTab("library")}
+          onClick={() => selectTab("library")}
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "library"
@@ -252,7 +267,7 @@ export function HomeView({
         </button>
         <button
           type="button"
-          onClick={() => setTab("playlists")}
+          onClick={() => selectTab("playlists")}
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "playlists"
@@ -265,7 +280,7 @@ export function HomeView({
         </button>
         <button
           type="button"
-          onClick={() => setTab("discover")}
+          onClick={() => selectTab("discover")}
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "discover"

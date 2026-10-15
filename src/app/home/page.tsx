@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { count, desc, eq } from "drizzle-orm";
 
 import { AppHeader } from "@/components/app-header";
-import { HomeView, type HomePlaylist, type SavedTrackView } from "@/components/home/home-view";
+import { HomeView, type HomePlaylist, type HomeTab, type SavedTrackView } from "@/components/home/home-view";
 import type { LibraryTrack } from "@/components/library/track-list";
 import { db } from "@/db";
 import { playlistItems, playlists, savedTracks, tracks } from "@/db/schema";
@@ -15,11 +15,17 @@ import { getDiscoverData } from "@/lib/discover";
 export const metadata: Metadata = { title: "ホーム" };
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/login?redirect=/home");
 
   const { user } = session;
+  const { tab } = await searchParams;
+  const initialTab: HomeTab = tab === "playlists" ? "playlists" : tab === "discover" ? "discover" : "library";
 
   const trackRows = await db
     .select({
@@ -125,6 +131,7 @@ export default async function HomePage() {
         userId={user.id}
         userName={user.name}
         discover={discover}
+        initialTab={initialTab}
       />
     </main>
   );
