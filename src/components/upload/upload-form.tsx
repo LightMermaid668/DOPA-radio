@@ -237,8 +237,8 @@ export function UploadForm() {
           {busy ? "アップロード中…" : `アップロードする${queuedCount > 0 ? `（${queuedCount}件）` : ""}`}
         </Button>
         {doneCount > 0 ? (
-          <Link href="/library" className={cn(buttonVariants({ variant: "outline", size: "lg" }))}>
-            ライブラリへ
+          <Link href="/home" className={cn(buttonVariants({ variant: "outline", size: "lg" }))}>
+            ホームへ
           </Link>
         ) : null}
       </div>

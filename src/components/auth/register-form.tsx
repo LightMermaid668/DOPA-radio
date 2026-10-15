@@ -10,7 +10,7 @@ import { authClient } from "@/lib/auth-client";
 export function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/library";
+  const redirectTo = searchParams.get("redirect") ?? "/home";
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

@@ -8,7 +8,9 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  CheckSquare,
   Loader2,
+  MoreVertical,
   Pencil,
   Pin,
   Play,
@@ -42,6 +44,8 @@ const VISIBILITY_LABELS: Record<LibraryTrack["visibility"], string> = {
   public: "公開",
 };
 
+const VISIBILITY_ORDER: LibraryTrack["visibility"][] = ["public", "unlisted", "private"];
+
 function formatDuration(sec: number | null): string {
   if (!sec || !Number.isFinite(sec)) return "--:--";
   const m = Math.floor(sec / 60);
@@ -55,8 +59,10 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkVisibility, setBulkVisibility] = useState<LibraryTrack["visibility"]>("private");
+  const [bulkVisibility, setBulkVisibility] = useState<LibraryTrack["visibility"]>("public");
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const processing = tracks.some((track) => track.status === "processing");
@@ -123,6 +129,13 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     setEditingId(null);
   }
 
+  function toggleSelectMode() {
+    setSelectMode((previous) => {
+      if (previous) setSelected(new Set());
+      return !previous;
+    });
+  }
+
   function toggleSelected(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -172,215 +185,268 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
 
   return (
     <div className="pb-8">
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dopa-800 bg-dopa-900/60 px-3 py-2 text-xs">
-        {selected.size > 0 ? (
-          <>
-            <span className="font-semibold text-accent">{selected.size}件</span>
-            <span className="text-zinc-400">の公開範囲を</span>
-            <select
-              value={bulkVisibility}
-              onChange={(e) => setBulkVisibility(e.target.value as LibraryTrack["visibility"])}
-              className="h-7 rounded-lg border border-dopa-700 bg-dopa-950 px-1.5 text-[11px] text-zinc-300 outline-none focus:border-accent"
-              aria-label="一括公開範囲"
-            >
-              {(Object.keys(VISIBILITY_LABELS) as Array<keyof typeof VISIBILITY_LABELS>).map(
-                (key) => (
-                  <option key={key} value={key}>
-                    {VISIBILITY_LABELS[key]}
-                  </option>
-                ),
-              )}
-            </select>
-            <span className="text-zinc-400">に変更</span>
-            <Button type="button" size="sm" onClick={applyBulk} disabled={bulkBusy}>
-              {bulkBusy ? "適用中…" : "適用"}
-            </Button>
-            <button
-              type="button"
-              onClick={selectAll}
-              className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
-            >
-              すべて選択
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
-            >
-              選択解除
-            </button>
-          </>
-        ) : (
-          <span className="text-zinc-500">
-            チェックを付けると公開範囲をまとめて変更できます
-          </span>
-        )}
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs text-zinc-500">{tracks.length}曲</span>
+        <button
+          type="button"
+          onClick={toggleSelectMode}
+          className={cn(
+            "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold",
+            selectMode
+              ? "border-accent text-accent"
+              : "border-dopa-700 text-zinc-300 hover:bg-dopa-800",
+          )}
+        >
+          <CheckSquare className="size-3.5" />
+          {selectMode ? "選択をやめる" : "選択"}
+        </button>
       </div>
 
-      <ul className="flex flex-col gap-2">
-        {tracks.map((track) => {
-        const ready = track.status === "ready";
-        const failed = track.status === "failed";
-        return (
-          <li
-            key={track.id}
-            className="rounded-2xl border border-dopa-800 bg-dopa-900 px-4 py-3"
+      {selectMode ? (
+        <div className="animate-pop mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dopa-700 bg-dopa-900 px-3 py-2 text-xs">
+          <span className="font-semibold text-accent">{selected.size}件</span>
+          <span className="text-zinc-400">の公開範囲を</span>
+          <select
+            value={bulkVisibility}
+            onChange={(e) => setBulkVisibility(e.target.value as LibraryTrack["visibility"])}
+            className="h-7 rounded-lg border border-dopa-700 bg-dopa-950 px-1.5 text-[11px] text-zinc-300 outline-none focus:border-accent"
+            aria-label="一括公開範囲"
           >
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={selected.has(track.id)}
-                onChange={() => toggleSelected(track.id)}
-                className="size-4 shrink-0 accent-fuchsia-500"
-                aria-label={`${track.title} を選択`}
-              />
-              <button
-                type="button"
-                onClick={() => playFrom(track.id)}
-                disabled={!ready}
-                className={cn(
-                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
-                  ready ? "bg-dopa-800 hover:ring-2 hover:ring-accent" : "bg-dopa-800/50",
-                )}
-                aria-label={ready ? `${track.title} を再生` : "再生できません"}
-              >
-                {ready ? (
-                  track.hasArtwork ? (
-                    <img
-                      src={`/api/tracks/${track.id}/artwork`}
-                      alt=""
-                      className="size-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <Play className="size-4 text-accent" />
-                  )
-                ) : track.status === "processing" ? (
-                  <Loader2 className="size-4 animate-spin text-zinc-500" />
-                ) : (
-                  <AlertTriangle className="size-4 text-red-400" />
-                )}
-              </button>
+            {VISIBILITY_ORDER.map((key) => (
+              <option key={key} value={key}>
+                {VISIBILITY_LABELS[key]}
+              </option>
+            ))}
+          </select>
+          <span className="text-zinc-400">に変更</span>
+          <Button type="button" size="sm" onClick={applyBulk} disabled={bulkBusy || selected.size === 0}>
+            {bulkBusy ? "適用中…" : "適用"}
+          </Button>
+          <button
+            type="button"
+            onClick={selectAll}
+            className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
+          >
+            すべて選択
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
+          >
+            選択解除
+          </button>
+        </div>
+      ) : null}
 
-              <div className="min-w-0 flex-1">
+      <ul className="flex flex-col gap-2">
+        {tracks.map((track, index) => {
+          const ready = track.status === "ready";
+          const failed = track.status === "failed";
+          return (
+            <li
+              key={track.id}
+              className="animate-row rounded-2xl border border-dopa-800 bg-dopa-900 px-4 py-3"
+              style={{ animationDelay: `${Math.min(index * 25, 200)}ms` }}
+            >
+              <div className="flex items-center gap-3">
+                {selectMode ? (
+                  <input
+                    type="checkbox"
+                    checked={selected.has(track.id)}
+                    onChange={() => toggleSelected(track.id)}
+                    className="size-4 shrink-0 accent-fuchsia-500"
+                    aria-label={`${track.title} を選択`}
+                  />
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => playFrom(track.id)}
+                  disabled={!ready}
+                  className={cn(
+                    "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
+                    ready ? "bg-dopa-800 hover:ring-2 hover:ring-accent" : "bg-dopa-800/50",
+                  )}
+                  aria-label={ready ? `${track.title} を再生` : "再生できません"}
+                >
+                  {ready ? (
+                    track.hasArtwork ? (
+                      <img
+                        src={`/api/tracks/${track.id}/artwork`}
+                        alt=""
+                        className="size-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Play className="size-4 text-accent" />
+                    )
+                  ) : track.status === "processing" ? (
+                    <Loader2 className="size-4 animate-spin text-zinc-500" />
+                  ) : (
+                    <AlertTriangle className="size-4 text-red-400" />
+                  )}
+                </button>
+
+                <div className="min-w-0 flex-1">
+                  {editingId === track.id ? (
+                    <div className="flex flex-col gap-1.5">
+                      <input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        maxLength={200}
+                        placeholder="タイトル"
+                        className="h-8 rounded-lg border border-dopa-700 bg-dopa-950 px-2 text-sm outline-none focus:border-accent"
+                      />
+                      <input
+                        value={editArtist}
+                        onChange={(e) => setEditArtist(e.target.value)}
+                        maxLength={200}
+                        placeholder="アーティスト"
+                        className="h-8 rounded-lg border border-dopa-700 bg-dopa-950 px-2 text-xs outline-none focus:border-accent"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        {track.pinned ? (
+                          <Pin className="size-3 shrink-0 text-accent" aria-label="ピン留め中" />
+                        ) : null}
+                        <p className="truncate text-sm font-semibold">{track.title}</p>
+                      </div>
+                      <p className="truncate text-xs text-zinc-400">
+                        {track.artist ?? "アーティスト不明"}
+                        {" ・ "}
+                        {formatDuration(track.durationSec)}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {track.status === "processing" ? (
+                  <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+                    変換中
+                  </span>
+                ) : null}
+                {failed ? (
+                  <span className="shrink-0 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+                    変換失敗
+                  </span>
+                ) : null}
+
                 {editingId === track.id ? (
-                  <div className="flex flex-col gap-1.5">
-                    <input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      maxLength={200}
-                      placeholder="タイトル"
-                      className="h-8 rounded-lg border border-dopa-700 bg-dopa-950 px-2 text-sm outline-none focus:border-accent"
-                    />
-                    <input
-                      value={editArtist}
-                      onChange={(e) => setEditArtist(e.target.value)}
-                      maxLength={200}
-                      placeholder="アーティスト"
-                      className="h-8 rounded-lg border border-dopa-700 bg-dopa-950 px-2 text-xs outline-none focus:border-accent"
-                    />
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => saveEdit(track.id)}
+                      disabled={busyId === track.id}
+                      className="flex size-8 items-center justify-center rounded-full text-accent hover:bg-dopa-800"
+                      aria-label="保存"
+                    >
+                      <Check className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800"
+                      aria-label="キャンセル"
+                    >
+                      <X className="size-4" />
+                    </button>
                   </div>
                 ) : (
-                  <>
-                    <p className="truncate text-sm font-semibold">{track.title}</p>
-                    <p className="truncate text-xs text-zinc-400">
-                      {track.artist ?? "アーティスト不明"}
-                      {" ・ "}
-                      {formatDuration(track.durationSec)}
-                    </p>
-                  </>
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMenuOpenId((current) => (current === track.id ? null : track.id))
+                      }
+                      className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
+                      aria-label="メニュー"
+                    >
+                      <MoreVertical className="size-4" />
+                    </button>
+
+                    {menuOpenId === track.id ? (
+                      <>
+                        <button
+                          type="button"
+                          className="fixed inset-0 z-40 cursor-default"
+                          onClick={() => setMenuOpenId(null)}
+                          aria-label="メニューを閉じる"
+                          tabIndex={-1}
+                        />
+                        <div className="animate-pop absolute right-0 top-9 z-50 w-48 rounded-xl border border-dopa-700 bg-dopa-900 p-1.5 shadow-xl">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuOpenId(null);
+                              void patchTrack(track.id, { pinned: !track.pinned });
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
+                          >
+                            <Pin className="size-3.5" />
+                            {track.pinned ? "ピン留めを解除" : "ピン留めする"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuOpenId(null);
+                              startEdit(track);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
+                          >
+                            <Pencil className="size-3.5" />
+                            編集
+                          </button>
+
+                          <div className="my-1 h-px bg-dopa-800" />
+                          <p className="px-2.5 pb-1 pt-0.5 text-[10px] text-zinc-500">
+                            公開範囲
+                          </p>
+                          {VISIBILITY_ORDER.map((visibility) => (
+                            <button
+                              key={visibility}
+                              type="button"
+                              onClick={() => {
+                                setMenuOpenId(null);
+                                void patchTrack(track.id, { visibility });
+                              }}
+                              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800"
+                            >
+                              {VISIBILITY_LABELS[visibility]}
+                              {track.visibility === visibility ? (
+                                <Check className="size-3.5 text-accent" />
+                              ) : null}
+                            </button>
+                          ))}
+
+                          <div className="my-1 h-px bg-dopa-800" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuOpenId(null);
+                              void deleteTrack(track.id, track.title);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-400 hover:bg-dopa-800"
+                          >
+                            <Trash2 className="size-3.5" />
+                            削除
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                 )}
               </div>
 
-              {editingId === track.id ? (
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => saveEdit(track.id)}
-                    disabled={busyId === track.id}
-                    className="flex size-8 items-center justify-center rounded-full text-accent hover:bg-dopa-800"
-                    aria-label="保存"
-                  >
-                    <Check className="size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(null)}
-                    className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800"
-                    aria-label="キャンセル"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                      ready && "bg-dopa-800 text-zinc-300",
-                      track.status === "processing" && "bg-amber-500/15 text-amber-400",
-                      failed && "bg-red-500/15 text-red-400",
-                    )}
-                  >
-                    {ready ? "再生可" : track.status === "processing" ? "変換中" : "変換失敗"}
-                  </span>
-
-                  <select
-                    value={track.visibility}
-                    onChange={(e) => patchTrack(track.id, { visibility: e.target.value })}
-                    disabled={busyId === track.id}
-                    className="h-7 rounded-lg border border-dopa-700 bg-dopa-950 px-1.5 text-[11px] text-zinc-300 outline-none focus:border-accent"
-                    aria-label="公開範囲"
-                  >
-                    {(Object.keys(VISIBILITY_LABELS) as Array<keyof typeof VISIBILITY_LABELS>).map(
-                      (key) => (
-                        <option key={key} value={key}>
-                          {VISIBILITY_LABELS[key]}
-                        </option>
-                      ),
-                    )}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() => patchTrack(track.id, { pinned: !track.pinned })}
-                    disabled={busyId === track.id}
-                    className={cn(
-                      "flex size-8 items-center justify-center rounded-full hover:bg-dopa-800",
-                      track.pinned ? "text-accent" : "text-zinc-400 hover:text-zinc-200",
-                    )}
-                    aria-label={track.pinned ? "ピン留めを解除" : "ピン留め"}
-                  >
-                    <Pin className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => startEdit(track)}
-                    className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
-                    aria-label="編集"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteTrack(track.id, track.title)}
-                    disabled={busyId === track.id}
-                    className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-red-400"
-                    aria-label="削除"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {failed && track.transcodeError ? (
-              <p className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-300">
-                {track.transcodeError}
-              </p>
-            ) : null}
-          </li>
-        );
+              {failed && track.transcodeError ? (
+                <p className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-300">
+                  {track.transcodeError}
+                </p>
+              ) : null}
+            </li>
+          );
         })}
       </ul>
     </div>

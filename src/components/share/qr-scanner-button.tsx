@@ -103,8 +103,8 @@ export function QrScannerButton() {
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6">
-          <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-dopa-700 bg-dopa-900 p-4">
+        <div className="animate-fade fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6">
+          <div className="animate-pop flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-dopa-700 bg-dopa-900 p-4">
             <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-black">
               <video
                 ref={videoRef}

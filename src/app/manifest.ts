@@ -1,11 +1,15 @@
 import type { MetadataRoute } from "next";
 
+// PWA のアプリID（UUID）。変更すると別アプリ扱いになり、再インストールで新しいアイデンティティになる
+const APP_ID = "8f2d5c1a-64b7-4e93-9a0f-3d6e7b21c845";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    id: `/start?app=${APP_ID}`,
     name: "DOPA-radio",
     short_name: "DOPA",
     description: "ドパガキのための音楽基地。曲を持ち寄ってプレイリストを共有しよう。",
-    start_url: "/start",
+    start_url: `/start?app=${APP_ID}`,
     // Android Chrome: インストール済みPWAがサイト内リンク（共有されたプレイリスト等）を
     // ブラウザではなくアプリで開けるようにする（iOSは非対応）
     launch_handler: { client_mode: "navigate-existing" },

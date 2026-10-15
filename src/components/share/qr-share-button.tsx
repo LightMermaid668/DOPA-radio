@@ -62,11 +62,11 @@ export function QrShareButton({
 
       {open ? (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6"
+          className="animate-fade fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6"
           onClick={() => setOpen(false)}
         >
           <div
-            className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border border-dopa-700 bg-dopa-900 p-6"
+            className="animate-pop flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border border-dopa-700 bg-dopa-900 p-6"
             onClick={(event) => event.stopPropagation()}
           >
             <p className="text-center text-sm font-bold">{title}</p>

@@ -19,11 +19,11 @@ export default async function UploadPage() {
     <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-6">
       <header className="flex items-center justify-between py-6">
         <Link
-          href="/library"
+          href="/home"
           className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200"
         >
           <ArrowLeft className="size-4" />
-          ライブラリ
+          ホーム
         </Link>
         <SignOutButton />
       </header>

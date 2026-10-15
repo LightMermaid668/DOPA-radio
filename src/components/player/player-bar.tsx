@@ -138,7 +138,7 @@ export function PlayerBar() {
             style={{ height: "calc(7rem + env(safe-area-inset-bottom))" }}
           />
           <div
-            className="fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
+            className="animate-slide-up fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             <div className="bg-rainbow h-0.5 w-full" aria-hidden />
@@ -228,7 +228,7 @@ export function PlayerBar() {
               </button>
 
               {speedOpen ? (
-                <div className="absolute right-0 bottom-11 w-64 rounded-xl border border-dopa-700 bg-dopa-900 p-3 shadow-xl">
+                <div className="animate-pop absolute right-0 bottom-11 w-64 rounded-xl border border-dopa-700 bg-dopa-900 p-3 shadow-xl">
                   <div className="px-1">
                     <div className="flex items-center justify-between text-[11px] text-zinc-400">
                       <span>速度</span>
