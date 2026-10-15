@@ -42,7 +42,7 @@ function s3Public(): S3Client {
       endpoint:
         process.env.S3_PUBLIC_ENDPOINT ??
         (process.env.NODE_ENV === "production"
-          ? "https://media.dopa-radio.sosukeiwasaki.f5.si"
+          ? "https://dopa-media.sosukeiwasaki.f5.si"
           : (process.env.S3_ENDPOINT ?? "http://localhost:3900")),
       forcePathStyle: true,
       credentials,

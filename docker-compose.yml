@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:-dopa-radio.sosukeiwasaki.f5.si}
-      MEDIA_DOMAIN: ${MEDIA_DOMAIN:-media.dopa-radio.sosukeiwasaki.f5.si}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN:-dopa-media.sosukeiwasaki.f5.si}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
