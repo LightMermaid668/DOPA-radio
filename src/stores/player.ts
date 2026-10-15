@@ -90,6 +90,9 @@ type PlayerState = {
 
 let fallbackTrackId: string | null = null;
 
+// 開始操作ごとのトークン。ピッチ音源の生成待ち中に別の曲/操作が始まったら破棄する
+let startToken = 0;
+
 function formatSemitones(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
@@ -107,20 +110,57 @@ function reportPlayError(error: unknown) {
 function playWithRetry(audio: HTMLAudioElement, attempt: number) {
   audio.play().catch((error: unknown) => {
     const name = error instanceof Error ? error.name : "";
-    if (attempt < 1 && (name === "AbortError" || name === "NotSupportedError")) {
-      const retry = () => {
-        audio.removeEventListener("canplay", retry);
-        audio.play().catch((retryError) => reportPlayError(retryError));
-      };
-      audio.addEventListener("canplay", retry);
+
+    // iOS Safari: ユーザー操作外からの play() は NotAllowedError で拒否される。
+    // エラー表示せず、次のタップで自動的に再開する（操作の邪魔をしない）
+    if (name === "NotAllowedError") {
+      armGestureResume();
       return;
     }
+
+    // load() 直後の play() は AbortError / NotSupportedError になることがある。
+    // canplay を待って再試行する
+    if (attempt < 2 && (name === "AbortError" || name === "NotSupportedError")) {
+      const retry = () => {
+        audio.removeEventListener("canplay", retry);
+        playWithRetry(audio, attempt + 1);
+      };
+      if (audio.readyState >= 2) {
+        retry();
+      } else {
+        audio.addEventListener("canplay", retry);
+      }
+      return;
+    }
+
     reportPlayError(error);
   });
 }
 
-async function ensurePitchVariant(trackId: string, semitones: number): Promise<boolean> {
+let gestureResumeArmed = false;
+
+/** 次のユーザー操作（タップ）で再生を再開する（iOSの自動再生制限対策） */
+function armGestureResume() {
+  if (gestureResumeArmed || typeof document === "undefined") return;
+  gestureResumeArmed = true;
+  const resume = () => {
+    gestureResumeArmed = false;
+    if (!usePlayer.getState().isPlaying) return;
+    const target = getAudio();
+    if (target && target.paused && !target.ended) {
+      target.play().catch(() => {});
+    }
+  };
+  document.addEventListener("pointerdown", resume, { once: true });
+}
+
+async function ensurePitchVariant(
+  trackId: string,
+  semitones: number,
+  token: number,
+): Promise<boolean> {
   for (let i = 0; i < 40; i++) {
+    if (token !== startToken) return false;
     try {
       const res = await fetch(`/api/tracks/${trackId}/pitch/${semitones}?check=1`);
       if (res.ok) {
@@ -133,6 +173,7 @@ async function ensurePitchVariant(trackId: string, semitones: number): Promise<b
     } catch {
       return false;
     }
+    if (token !== startToken) return false;
     usePlayer.setState({
       playbackNotice: `${formatSemitones(semitones)}半音の音源を生成しています…（初回のみ・数秒）`,
     });
@@ -149,6 +190,7 @@ function startTrackWithPitch(
   position: number,
   play: boolean,
   fade: { fadeIn: boolean; resetVolume: boolean },
+  token: number,
 ) {
   void (async () => {
     const audio = getAudio();
@@ -159,7 +201,9 @@ function startTrackWithPitch(
       playbackNotice: `${formatSemitones(semitones)}半音の音源を準備しています…`,
     });
 
-    const ready = await ensurePitchVariant(track.id, semitones);
+    const ready = await ensurePitchVariant(track.id, semitones, token);
+    // 生成待ちの間に別の曲/操作が始まっていたら破棄する（勝手に割り込まない）
+    if (token !== startToken) return;
     if (!ready) {
       usePlayer.setState({
         playbackNotice: null,
@@ -184,7 +228,8 @@ function startTrackWithPitch(
     } else if (fade.resetVolume) {
       resetAudioVolume();
     }
-    if (play) {
+    // 生成待ちの間に一時停止されていたら自動再生しない
+    if (play && usePlayer.getState().isPlaying) {
       playWithRetry(audio, 0);
     }
   })();
@@ -197,6 +242,7 @@ function startTrack(
   semitones: number,
   opts?: { position?: number; play?: boolean },
 ) {
+  const token = ++startToken;
   const play = opts?.play ?? true;
   const position = opts?.position ?? 0;
 
@@ -239,6 +285,7 @@ function startTrack(
       effectivePosition,
       play,
       fade,
+      token,
     );
     return;
   }
@@ -741,6 +788,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const nextQueue = queue.filter((_, position) => position !== removeIndex);
 
     if (nextQueue.length === 0) {
+      startToken++;
       getAudio()?.pause();
       set({
         queue: [],

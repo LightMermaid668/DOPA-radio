@@ -49,12 +49,45 @@ export type PlaybackSettings = {
   preservesPitch: boolean;
 };
 
-export function applyPlaybackSettings(target: HTMLAudioElement, settings: PlaybackSettings) {
-  target.playbackRate = settings.rate;
-  target.defaultPlaybackRate = settings.rate;
-  target.preservesPitch = settings.preservesPitch;
+const playbackSettings = new WeakMap<HTMLAudioElement, PlaybackSettings>();
+const reapplyBound = new WeakSet<HTMLAudioElement>();
+
+function applyPlaybackSettingsNow(target: HTMLAudioElement, settings: PlaybackSettings) {
+  // 未対応の値で例外を投げるブラウザがあるため個別に保護する
+  try {
+    target.playbackRate = settings.rate;
+  } catch {
+    /* ignore */
+  }
+  try {
+    target.defaultPlaybackRate = settings.rate;
+  } catch {
+    /* ignore */
+  }
   const legacy = target as HTMLAudioElement & { webkitPreservesPitch?: boolean };
-  legacy.webkitPreservesPitch = settings.preservesPitch;
+  try {
+    target.preservesPitch = settings.preservesPitch;
+    legacy.webkitPreservesPitch = settings.preservesPitch;
+  } catch {
+    /* ignore */
+  }
+}
+
+export function applyPlaybackSettings(target: HTMLAudioElement, settings: PlaybackSettings) {
+  playbackSettings.set(target, settings);
+  if (!reapplyBound.has(target)) {
+    reapplyBound.add(target);
+    // iOS Safari は読み込み前に設定した速度/ピッチ保持を破棄することがあるため、
+    // メタデータ読み込み・再生開始のタイミングでも再適用する
+    const reapply = () => {
+      const latest = playbackSettings.get(target);
+      if (latest) applyPlaybackSettingsNow(target, latest);
+    };
+    target.addEventListener("loadedmetadata", reapply);
+    target.addEventListener("canplay", reapply);
+    target.addEventListener("playing", reapply);
+  }
+  applyPlaybackSettingsNow(target, settings);
 }
 
 /* ---- 音量フェード（サビメドレーのフェードイン/アウト用） ---- */
