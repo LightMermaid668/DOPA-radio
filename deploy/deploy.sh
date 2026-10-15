@@ -43,6 +43,15 @@ else
   echo "[deploy] コードは最新ですがコンテナが未起動のためデプロイします"
 fi
 
+# garage.toml の初回生成（シークレットは自動生成）
+if [ ! -f garage.toml ]; then
+  echo "[deploy] garage.toml を生成します"
+  sed -e "s|__RPC_SECRET__|$(openssl rand -hex 32)|" \
+      -e "s|__ADMIN_TOKEN__|$(openssl rand -hex 32)|" \
+      garage.toml.example >garage.toml
+  chmod 600 garage.toml
+fi
+
 echo "[deploy] docker compose を再ビルドして起動します..."
 docker compose up -d --build --remove-orphans
 docker image prune -f >/dev/null 2>&1 || true

@@ -16,7 +16,7 @@
 | テンプレート | Debian 12 または 13 standard |
 | CPU | 2 vCPU |
 | メモリ | 2 GB（余裕があれば 4 GB） |
-| ディスク | 32 GB（音源は MinIO がここに保存。後から拡張可） |
+| ディスク | 32 GB（音源は Garage がここに保存。後から拡張可） |
 | ネットワーク | 固定 IP（例: `192.168.1.50/24`、GW はルーター） |
 | 特権 | 非特権で可 |
 
@@ -85,8 +85,10 @@ git clone <repository-url> /opt/dopa-radio
 ```bash
 cd /opt/dopa-radio
 cp .env.example .env
-openssl rand -base64 32   # → BETTER_AUTH_SECRET に記入
-openssl rand -base64 24   # → POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD に記入
+openssl rand -hex 32   # → BETTER_AUTH_SECRET に記入
+openssl rand -hex 24   # → POSTGRES_PASSWORD に記入
+echo "S3_ACCESS_KEY=GK$(openssl rand -hex 16)"   # → 出力を .env へ
+echo "S3_SECRET_KEY=$(openssl rand -hex 32)"     # → 出力を .env へ
 nano .env
 chmod 600 .env
 ```
@@ -173,7 +175,8 @@ cd /opt/dopa-radio && git log --oneline -1
 ### 注意点
 
 - **Cloudflare Free のリクエストボディ上限は 100MB/リクエスト**。音源アップロードは presigned URL で CHUNK 分割 or 100MB 以下運用（ビットレート的には十分）
-- MinIO コンソール（:9001）は非公開。確認したい場合は一時的に `docker compose exec minio ...` か、SSH ポートフォワードを使う
+- Garage（S3互換ストレージ）には Web コンソールがありません。状態確認は `docker compose exec garage /garage status`
+- `garage.toml` は deploy.sh が初回に自動生成します（git 管理外・シークレット入り）
 - バックアップ（PBS + オフサイト）はフェーズ5で構築。**それまで音源のバックアップは手動で**
 - 停電・回線断でサービスは停止する（自宅サーバーの宿命）。Cloudflare 側は 502/1033 を返す
 

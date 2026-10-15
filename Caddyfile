@@ -9,8 +9,8 @@ http://{$APP_DOMAIN} {
 	reverse_proxy web:3000
 }
 
-# MinIO（presigned URL の配信先。Range リクエスト対応）
+# S3互換ストレージ（presigned URL の配信先。Range リクエスト対応）
 http://{$MEDIA_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy minio:9000
+	reverse_proxy garage:3900
 }

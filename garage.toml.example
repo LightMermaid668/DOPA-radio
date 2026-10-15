@@ -1,0 +1,29 @@
+# DOPA-radio / Garage 設定ファイル
+#
+# garage.toml は deploy.sh が初回デプロイ時に garage.toml.example から自動生成します
+# （__RPC_SECRET__ / __ADMIN_TOKEN__ は openssl でランダム生成）
+#
+# 手動で作る場合:
+#   sed -e "s|__RPC_SECRET__|$(openssl rand -hex 32)|" \
+#       -e "s|__ADMIN_TOKEN__|$(openssl rand -hex 32)|" \
+#       garage.toml.example > garage.toml
+#   chmod 600 garage.toml
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret = "__RPC_SECRET__"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.localhost"
+
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token = "__ADMIN_TOKEN__"

@@ -16,31 +16,19 @@ services:
       timeout: 5s
       retries: 12
 
-  minio:
-    image: minio/minio:latest
+  garage:
+    image: dxflrs/garage:v2.4.1
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    entrypoint: ["/garage"]
+    command: ["server", "--single-node", "--default-bucket"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER を .env に設定してください}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD を .env に設定してください}
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY を .env に設定してください}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY を .env に設定してください}
+      GARAGE_DEFAULT_BUCKET: ${S3_BUCKET:-dopa-media}
     volumes:
-      - miniodata:/data
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      - minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint: >
-      /bin/sh -c '
-      until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
-        echo "waiting for minio..."; sleep 2;
-      done;
-      mc mb --ignore-existing local/uploads;
-      mc mb --ignore-existing local/media;
-      echo "buckets ready"'
+      - ./garage.toml:/etc/garage.toml:ro
+      - garagemeta:/var/lib/garage/meta
+      - garagedata:/var/lib/garage/data
 
   web:
     build: .
@@ -84,7 +72,7 @@ services:
       - caddyconfig:/config
     depends_on:
       - web
-      - minio
+      - garage
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -97,6 +85,7 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
+  garagemeta:
+  garagedata:
   caddydata:
   caddyconfig:

@@ -18,7 +18,7 @@
 | PWA | manifest + Service Worker + Media Session API |
 | DB | PostgreSQL 16 + Drizzle ORM |
 | 認証 | Better Auth（メール+パスワード / Google OAuth） |
-| ストレージ | MinIO（S3 互換） |
+| ストレージ | Garage（S3 互換） |
 | ジョブ | pg-boss + ffmpeg（worker） |
 | 配信 | Docker Compose + Caddy + Cloudflare Tunnel |
 
@@ -32,10 +32,10 @@ npm run db:generate    # スキーマ変更時にマイグレーション生成
 npm run dev            # http://localhost:3000
 ```
 
-DB と MinIO は Docker で立てる場合:
+DB とストレージは Docker で立てる場合:
 
 ```bash
-docker compose up -d postgres minio minio-init
+docker compose up -d postgres garage
 ```
 
 ## スクリプト
