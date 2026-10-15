@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 
 import { ChorusEditor } from "@/components/library/chorus-editor";
+import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { confirmDialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,9 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkVisibility, setBulkVisibility] = useState<LibraryTrack["visibility"]>("public");
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
+  const playerIsPlaying = usePlayer((s) => s.isPlaying);
 
   const processing = tracks.some((track) => track.status === "processing");
   useEffect(() => {
@@ -364,22 +368,29 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                   onClick={() => playFrom(track.id)}
                   disabled={!ready}
                   className={cn(
-                    "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
+                    "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
                     ready ? "bg-dopa-800 hover:ring-2 hover:ring-accent" : "bg-dopa-800/50",
                   )}
                   aria-label={ready ? `${track.title} を再生` : "再生できません"}
                 >
                   {ready ? (
-                    track.hasArtwork ? (
-                      <img
-                        src={`/api/tracks/${track.id}/artwork`}
-                        alt=""
-                        className="size-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <Play className="size-4 text-accent" />
-                    )
+                    <>
+                      {track.hasArtwork ? (
+                        <img
+                          src={`/api/tracks/${track.id}/artwork`}
+                          alt=""
+                          className="size-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Play className="size-4 text-accent" />
+                      )}
+                      {currentTrackId === track.id ? (
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/60">
+                          <NowPlayingIndicator playing={playerIsPlaying} />
+                        </span>
+                      ) : null}
+                    </>
                   ) : track.status === "processing" ? (
                     <Loader2 className="size-4 animate-spin text-zinc-500" />
                   ) : (

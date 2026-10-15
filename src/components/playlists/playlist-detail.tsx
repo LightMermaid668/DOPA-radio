@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { ShareButton } from "@/components/playlists/share-button";
+import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { QrShareButton } from "@/components/share/qr-share-button";
 import { Button } from "@/components/ui/button";
 import { confirmDialog } from "@/components/ui/dialog";
@@ -151,6 +152,9 @@ export function PlaylistDetail({
   const queueEntries = data.items
     .map((item) => ({ itemId: item.itemId, track: toPlayerTrack(item) }))
     .filter((entry): entry is { itemId: string; track: PlayerTrack } => entry.track !== null);
+
+  const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
+  const playerIsPlaying = usePlayer((s) => s.isPlaying);
 
   function playFrom(itemId: string) {
     const index = queueEntries.findIndex((entry) => entry.itemId === itemId);
@@ -610,7 +614,9 @@ export function PlaylistDetail({
       ) : (
         <ul className="flex flex-col gap-2 pb-8">
           {data.items.map((item, position) => {
-            const playable = toPlayerTrack(item) !== null;
+            const mapped = toPlayerTrack(item);
+            const playable = mapped !== null;
+            const isCurrent = mapped !== null && currentTrackId === mapped.id;
             return (
               <li
                 key={item.itemId}
@@ -624,7 +630,7 @@ export function PlaylistDetail({
                   onClick={() => playFrom(item.itemId)}
                   disabled={!playable}
                   className={cn(
-                    "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
+                    "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
                     playable ? "bg-dopa-800 hover:ring-2 hover:ring-accent" : "bg-dopa-800/50",
                   )}
                   aria-label="再生"
@@ -648,6 +654,11 @@ export function PlaylistDetail({
                   ) : (
                     <Music2 className="size-4 text-zinc-500" />
                   )}
+                  {isCurrent ? (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/60">
+                      <NowPlayingIndicator playing={playerIsPlaying} />
+                    </span>
+                  ) : null}
                 </button>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

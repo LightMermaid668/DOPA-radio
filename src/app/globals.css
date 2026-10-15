@@ -99,6 +99,22 @@ body {
   }
 }
 
+@keyframes now-playing-bounce {
+  0%,
+  100% {
+    height: 35%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+
+.now-playing-bar {
+  height: 35%;
+  animation: now-playing-bounce 0.9s ease-in-out infinite;
+  background: linear-gradient(180deg, #f7e463, #f472b6);
+}
+
 main {
   animation: page-enter 0.3s ease-out backwards;
 }

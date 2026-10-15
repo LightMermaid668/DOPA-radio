@@ -9,6 +9,7 @@ import { BookmarkMinus, Compass, ListMusic, Music2, PinOff, Play } from "lucide-
 
 import { DiscoverView } from "@/components/discover/discover-view";
 import { TrackList, type LibraryTrack } from "@/components/library/track-list";
+import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { CreatePlaylistForm } from "@/components/playlists/create-playlist-form";
 import { ImportPlaylistForm } from "@/components/playlists/import-playlist-form";
 import { QrShareButton } from "@/components/share/qr-share-button";
@@ -58,6 +59,9 @@ export function HomeView({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"library" | "playlists" | "discover">("library");
+
+  const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
+  const playerIsPlaying = usePlayer((s) => s.isPlaying);
 
   const pinned = tracks.filter((track) => track.pinned && track.status === "ready");
   const playableSaved = savedTracks.filter((track) => track.ready);
@@ -141,9 +145,15 @@ export function HomeView({
                     ) : (
                       <Music2 className="size-5 text-zinc-500" />
                     )}
-                    <span className="absolute bottom-1 right-1 flex size-6 items-center justify-center rounded-full bg-dopa-950/80 text-accent">
-                      <Play className="size-3" />
-                    </span>
+                    {currentTrackId === track.id ? (
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/60">
+                        <NowPlayingIndicator playing={playerIsPlaying} />
+                      </span>
+                    ) : (
+                      <span className="absolute bottom-1 right-1 flex size-6 items-center justify-center rounded-full bg-dopa-950/80 text-accent">
+                        <Play className="size-3" />
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 truncate text-xs font-semibold">{track.title}</p>
                   <p className="truncate text-[10px] text-zinc-500">
@@ -222,7 +232,7 @@ export function HomeView({
                       onClick={() => playSaved(track.trackId)}
                       disabled={!track.ready}
                       className={cn(
-                        "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
+                        "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
                         track.ready
                           ? "bg-dopa-800 hover:ring-2 hover:ring-accent"
                           : "bg-dopa-800/50",
@@ -239,6 +249,11 @@ export function HomeView({
                       ) : (
                         <Music2 className="size-4 text-zinc-500" />
                       )}
+                      {currentTrackId === track.trackId ? (
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/60">
+                          <NowPlayingIndicator playing={playerIsPlaying} />
+                        </span>
+                      ) : null}
                     </button>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{track.title}</p>

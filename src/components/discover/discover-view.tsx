@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ListMusic, Play } from "lucide-react";
 
 import { SaveTrackButton } from "@/components/playlists/save-track-button";
+import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { ReportButton } from "@/components/reports/report-button";
 import type { DiscoverPlaylist, DiscoverTrack } from "@/lib/discover";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,9 @@ export function DiscoverView({
   playlists: DiscoverPlaylist[];
   loggedIn: boolean;
 }) {
+  const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
+  const playerIsPlaying = usePlayer((s) => s.isPlaying);
+
   function playFrom(id: string) {
     const index = tracks.findIndex((track) => track.id === id);
     if (index < 0) return;
@@ -94,7 +98,7 @@ export function DiscoverView({
                 <button
                   type="button"
                   onClick={() => playFrom(track.id)}
-                  className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800 hover:ring-2 hover:ring-accent"
+                  className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800 hover:ring-2 hover:ring-accent"
                   aria-label={`${track.title} を再生`}
                 >
                   {track.hasArtwork ? (
@@ -107,6 +111,11 @@ export function DiscoverView({
                   ) : (
                     <Play className="size-4 text-accent" />
                   )}
+                  {currentTrackId === track.id ? (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/60">
+                      <NowPlayingIndicator playing={playerIsPlaying} />
+                    </span>
+                  ) : null}
                 </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{track.title}</p>
