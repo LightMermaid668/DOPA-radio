@@ -50,6 +50,13 @@
       "when": 1792102067163,
       "tag": "0006_regular_steve_rogers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792106448790,
+      "tag": "0007_fresh_cloak",
+      "breakpoints": true
     }
   ]
 }

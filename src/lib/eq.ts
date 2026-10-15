@@ -25,6 +25,28 @@ let graph: {
   limiter: DynamicsCompressorNode;
 } | null = null;
 
+// MediaElementSourceは1要素につき1回だけ作成できるため、接続済み要素を記録する
+const connectedElements = new WeakSet<HTMLAudioElement>();
+
+function connectElement(element: HTMLAudioElement): boolean {
+  if (!audioContext || !graph) return false;
+  if (connectedElements.has(element)) return true;
+  try {
+    const source = audioContext.createMediaElementSource(element);
+    source.connect(graph.bass);
+    connectedElements.add(element);
+    return true;
+  } catch (error) {
+    console.warn("[eq] failed to connect element:", error);
+    return false;
+  }
+}
+
+/** クロスフェードでメイン要素が入れ替わったときに、新しい要素をグラフへ接続する */
+export function attachToEqGraph(element: HTMLAudioElement): boolean {
+  return connectElement(element);
+}
+
 /**
  * Web Audio のサウンドグラフ（EQ + 音量ブースト + リミッター）を構築して AudioContext を再開する。
  * 一度接続した audio 要素は以降すべてこのグラフを通る（EQ OFFでもフラットで素通し）。
@@ -37,8 +59,6 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return false;
       audioContext = new Ctor();
-
-      const source = audioContext.createMediaElementSource(audio);
 
       const bass = audioContext.createBiquadFilter();
       bass.type = "lowshelf";
@@ -64,7 +84,6 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
       limiter.attack.value = 0.003;
       limiter.release.value = 0.25;
 
-      source.connect(bass);
       bass.connect(mid);
       mid.connect(treble);
       treble.connect(boost);
@@ -73,6 +92,7 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
 
       graph = { bass, mid, treble, boost, limiter };
     }
+    if (!connectElement(audio)) return false;
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }

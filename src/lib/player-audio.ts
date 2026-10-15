@@ -1,17 +1,47 @@
 "use client";
 
 let audio: HTMLAudioElement | null = null;
+let secondaryAudio: HTMLAudioElement | null = null;
+
+function createAudioElement(): HTMLAudioElement {
+  const element = new Audio();
+  element.preload = "auto";
+  // イコライザー/音量ブースト（Web Audio）を後からシームレスに使えるように
+  // 最初からCORSモードで取得する（自前配信・Apple試聴とも対応済み）
+  element.crossOrigin = "anonymous";
+  return element;
+}
 
 export function getAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (!audio) {
-    audio = new Audio();
-    audio.preload = "auto";
-    // イコライザー/音量ブースト（Web Audio）を後からシームレスに使えるように
-    // 最初からCORSモードで取得する（自前配信・Apple試聴とも対応済み）
-    audio.crossOrigin = "anonymous";
+    audio = createAudioElement();
   }
   return audio;
+}
+
+/**
+ * クロスフェード/先読み用の2つ目の要素。
+ * iOSは「曲が終わってから src を変えて play()」が無音になることがあるため、
+ * 終了前に次の曲をこの要素で再生開始し、終了時に役割を入れ替える。
+ */
+export function getSecondaryAudio(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (!secondaryAudio) {
+    secondaryAudio = createAudioElement();
+  }
+  return secondaryAudio;
+}
+
+/** メインと2つ目の要素の役割を入れ替える（再生を途切れさせずに次の曲へ） */
+export function swapAudioRoles(): void {
+  const current = audio;
+  audio = secondaryAudio;
+  secondaryAudio = current;
+}
+
+export function isCrossfadeSrc(src: string): boolean {
+  return src.includes("/crossfade");
 }
 
 export function isIos(): boolean {

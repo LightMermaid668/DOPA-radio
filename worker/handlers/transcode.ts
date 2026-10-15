@@ -17,6 +17,7 @@ import {
   putObjectFile,
 } from "../../src/lib/s3";
 import { detectChorus } from "../lib/chorus";
+import { buildCrossfadeFile } from "../lib/crossfade";
 import { ffprobe } from "../lib/ffprobe";
 
 const execFileAsync = promisify(execFile);
@@ -117,6 +118,17 @@ export async function transcodeTrack(trackId: string): Promise<void> {
       await putObjectFile(`hls/${trackId}/${file}`, path.join(hlsDir, file), contentType);
     }
 
+    // クロスフェード用（フェードを焼き込んだ音源）。失敗しても変換自体は成功扱い
+    let crossfadeKey: string | null = null;
+    try {
+      const crossfadePath = path.join(workDir, "crossfade.m4a");
+      await buildCrossfadeFile(originalPath, duration, crossfadePath);
+      crossfadeKey = `crossfade/${trackId}.m4a`;
+      await putObjectFile(crossfadeKey, crossfadePath, "audio/mp4");
+    } catch (error) {
+      console.warn(`[transcode] crossfade build failed (${trackId}):`, error);
+    }
+
     let artworkKey = track.artworkKey;
     if (artworkBuffer) {
       artworkKey = `artwork/${trackId}.webp`;
@@ -144,6 +156,7 @@ export async function transcodeTrack(trackId: string): Promise<void> {
         durationSec: Math.round(duration),
         audioKey,
         hlsKey,
+        crossfadeKey,
         artworkKey,
         title,
         artist,

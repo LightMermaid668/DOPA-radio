@@ -45,6 +45,8 @@ export const tracks = pgTable(
     originalKey: text("original_key"),
     audioKey: text("audio_key"),
     hlsKey: text("hls_key"),
+    // クロスフェード用（頭3秒フェードイン・末尾6秒フェードアウトを焼き込んだ音源）
+    crossfadeKey: text("crossfade_key"),
     artworkKey: text("artwork_key"),
     status: trackStatusEnum("status").notNull().default("processing"),
     transcodeError: text("transcode_error"),

@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import {
+  Blend,
   Gauge,
   ListMusic,
   Loader2,
@@ -22,6 +23,7 @@ import {
   applyPlaybackSettings,
   fadeAudioVolume,
   getAudio,
+  getSecondaryAudio,
   maxPlaybackRate,
   resetAudioVolume,
 } from "@/lib/player-audio";
@@ -97,6 +99,8 @@ export function PlayerBar() {
   const dopaMode = usePlayer((s) => s.dopaMode);
   const chorusOnly = usePlayer((s) => s.chorusOnly);
   const setChorusOnly = usePlayer((s) => s.setChorusOnly);
+  const crossfade = usePlayer((s) => s.crossfade);
+  const setCrossfade = usePlayer((s) => s.setCrossfade);
   const eqEnabled = usePlayer((s) => s.eqEnabled);
   const eqPreset = usePlayer((s) => s.eqPreset);
   const eqBass = usePlayer((s) => s.eqBass);
@@ -173,17 +177,29 @@ export function PlayerBar() {
   useEffect(() => {
     const container = containerRef.current;
     const audio = getAudio();
-    if (container && audio && audio.parentElement !== container) {
-      container.appendChild(audio);
+    const secondary = getSecondaryAudio();
+    for (const element of [audio, secondary]) {
+      if (container && element && element.parentElement !== container) {
+        container.appendChild(element);
+      }
     }
     hydrateSettings();
   }, [hydrateSettings]);
 
   useEffect(() => {
     const audio = getAudio();
-    if (!audio) return;
+    const secondary = getSecondaryAudio();
+    const elements = [audio, secondary].filter(
+      (element): element is HTMLAudioElement => element !== null,
+    );
+    if (elements.length === 0) return;
 
-    const handleTime = () => {
+    // クロスフェードでメイン要素が入れ替わるため、現在のメインのイベントのみ処理する
+    const isMainEvent = (event: Event) => event.currentTarget === getAudio();
+
+    const handleTime = (event: Event) => {
+      if (!isMainEvent(event)) return;
+      const element = event.currentTarget as HTMLAudioElement;
       const state = usePlayer.getState();
       const current = state.queue[state.index];
 
@@ -194,10 +210,10 @@ export function PlayerBar() {
         current.chorusEndSec - (current.chorusStartSec ?? 0) >= 5
       ) {
         const key = `${current.id}:${state.index}:${state.queue.length}`;
-        const remaining = current.chorusEndSec - audio.currentTime;
+        const remaining = current.chorusEndSec - element.currentTime;
 
         // サビ終端の0.85秒前からフェードアウト
-        if (state.isPlaying && !audio.paused && remaining <= 0.85 && remaining > 0.05) {
+        if (state.isPlaying && !element.paused && remaining <= 0.85 && remaining > 0.05) {
           if (fadeOutKeyRef.current !== key) {
             fadeOutKeyRef.current = key;
             void fadeAudioVolume(0, Math.max(150, (remaining - 0.05) * 1000));
@@ -209,7 +225,7 @@ export function PlayerBar() {
         }
 
         // サビ終端に達したら次の曲へ（次の曲はフェードインで開始）
-        if (state.isPlaying && !audio.paused && remaining <= 0.08) {
+        if (state.isPlaying && !element.paused && remaining <= 0.08) {
           if (chorusGuardRef.current !== key) {
             chorusGuardRef.current = key;
             state.next();
@@ -218,37 +234,60 @@ export function PlayerBar() {
         }
       }
 
-      usePlayer.setState({ progress: audio.currentTime, duration: audio.duration || 0 });
+      usePlayer.setState({
+        progress: element.currentTime,
+        duration: element.duration || 0,
+      });
+      // クロスフェード（次曲の先読み再生）とドパモード補充の判定
+      state.maybeCrossfade(element.currentTime, element.duration || 0);
     };
-    const handlePlay = () => {
-      applyPlaybackSettings(audio, {
+    const handlePlay = (event: Event) => {
+      if (!isMainEvent(event)) return;
+      const element = event.currentTarget as HTMLAudioElement;
+      applyPlaybackSettings(element, {
         rate: usePlayer.getState().rate,
         preservesPitch: usePlayer.getState().preservesPitch,
       });
       usePlayer.setState({ isPlaying: true });
     };
-    const handlePause = () => usePlayer.setState({ isPlaying: false });
-    const handleEnded = () => usePlayer.getState().next();
-    const handleLoaded = () =>
-      applyPlaybackSettings(audio, {
+    const handlePause = (event: Event) => {
+      if (!isMainEvent(event)) return;
+      usePlayer.setState({ isPlaying: false });
+    };
+    const handleEnded = (event: Event) => {
+      if (!isMainEvent(event)) return;
+      usePlayer.getState().next();
+    };
+    const handleLoaded = (event: Event) => {
+      if (!isMainEvent(event)) return;
+      const element = event.currentTarget as HTMLAudioElement;
+      applyPlaybackSettings(element, {
         rate: usePlayer.getState().rate,
         preservesPitch: usePlayer.getState().preservesPitch,
       });
-    const handleError = () => handleAudioError(audio);
+    };
+    const handleError = (event: Event) => {
+      if (!isMainEvent(event)) return;
+      handleAudioError(event.currentTarget as HTMLAudioElement);
+    };
 
-    audio.addEventListener("timeupdate", handleTime);
-    audio.addEventListener("play", handlePlay);
-    audio.addEventListener("pause", handlePause);
-    audio.addEventListener("ended", handleEnded);
-    audio.addEventListener("loadedmetadata", handleLoaded);
-    audio.addEventListener("error", handleError);
+    for (const element of elements) {
+      element.addEventListener("timeupdate", handleTime);
+      element.addEventListener("play", handlePlay);
+      element.addEventListener("pause", handlePause);
+      element.addEventListener("ended", handleEnded);
+      element.addEventListener("loadedmetadata", handleLoaded);
+      element.addEventListener("error", handleError);
+    }
     return () => {
-      audio.removeEventListener("timeupdate", handleTime);
-      audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener("pause", handlePause);
-      audio.removeEventListener("ended", handleEnded);
-      audio.removeEventListener("loadedmetadata", handleLoaded);
-      audio.removeEventListener("error", handleError);
+      for (const element of elements) {
+        element.removeEventListener("timeupdate", handleTime);
+        element.removeEventListener("play", handlePlay);
+        element.removeEventListener("pause", handlePause);
+        element.removeEventListener("ended", handleEnded);
+        element.removeEventListener("loadedmetadata", handleLoaded);
+        element.removeEventListener("error", handleError);
+      }
     };
   }, []);
 
@@ -803,9 +842,9 @@ export function PlayerBar() {
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-2 px-5 pt-4 pb-2">
-              <h2 className="text-sm font-bold">再生キュー（{queue.length}曲）</h2>
-              <div className="flex items-center gap-1">
+            <div className="flex items-start justify-between gap-2 px-5 pt-4 pb-2">
+              <h2 className="pt-1.5 text-sm font-bold">再生キュー（{queue.length}曲）</h2>
+              <div className="flex flex-wrap items-center justify-end gap-1">
                 <button
                   type="button"
                   onClick={() => usePlayer.getState().shuffleQueue()}
@@ -842,6 +881,19 @@ export function PlayerBar() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setCrossfade(!crossfade)}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold",
+                    crossfade
+                      ? "border-accent text-accent"
+                      : "border-dopa-700 text-zinc-200 hover:bg-dopa-800",
+                  )}
+                >
+                  <Blend className="size-3.5" />
+                  クロスフェード
+                </button>
+                <button
+                  type="button"
                   onClick={() => setQueueOpen(false)}
                   className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800"
                   aria-label="閉じる"
@@ -851,10 +903,13 @@ export function PlayerBar() {
               </div>
             </div>
 
-            {dopaMode || chorusOnly ? (
+            {dopaMode || chorusOnly || crossfade ? (
               <p className="px-5 pb-2 text-[11px] text-zinc-500">
                 {dopaMode ? "キューが終わると似てる曲を自動追加。" : ""}
                 {chorusOnly ? "サビ範囲が設定された曲はサビの部分だけ再生します。" : ""}
+                {crossfade && !chorusOnly
+                  ? "曲の終わり3秒前から次の曲を重ねて途切れなくつなぎます（iPhoneでも動作・サビだけ中はOFF）。"
+                  : ""}
               </p>
             ) : null}
 

@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   applyBoostGain,
   applyEqGains,
+  attachToEqGraph,
   EQ_PRESETS,
   ensureEqGraph,
   eqGraphReady,
@@ -12,10 +13,13 @@ import {
 import {
   applyPlaybackSettings,
   getAudio,
+  getSecondaryAudio,
+  isCrossfadeSrc,
   isIos,
   maxPlaybackRate,
   prepareFadeIn,
   resetAudioVolume,
+  swapAudioRoles,
   trackSrc,
 } from "@/lib/player-audio";
 
@@ -24,12 +28,16 @@ const PITCH_KEY = "dopa:preserves-pitch";
 const PITCH_SEMITONES_KEY = "dopa:pitch-semitones";
 const DOPA_MODE_KEY = "dopa:dopa-mode";
 const CHORUS_ONLY_KEY = "dopa:chorus-only";
+const CROSSFADE_KEY = "dopa:crossfade";
 const EQ_ENABLED_KEY = "dopa:eq-enabled";
 const EQ_PRESET_KEY = "dopa:eq-preset";
 const EQ_BASS_KEY = "dopa:eq-bass";
 const EQ_MID_KEY = "dopa:eq-mid";
 const EQ_TREBLE_KEY = "dopa:eq-treble";
 const BOOST_KEY = "dopa:boost-level";
+
+// 次の曲を重ね始める秒数（ワーカーが焼き込む頭フェードインと同長）
+const CROSSFADE_SEC = 3;
 
 export type PlayerTrack = {
   id: string;
@@ -59,6 +67,7 @@ type PlayerState = {
   playbackNotice: string | null;
   dopaMode: boolean;
   chorusOnly: boolean;
+  crossfade: boolean;
   eqEnabled: boolean;
   eqPreset: string;
   eqBass: number;
@@ -78,6 +87,8 @@ type PlayerState = {
   setPitchSemitones: (value: number) => void;
   setDopaMode: (value: boolean) => void;
   setChorusOnly: (value: boolean) => void;
+  setCrossfade: (value: boolean) => void;
+  maybeCrossfade: (time: number, duration: number) => void;
   setEqEnabled: (value: boolean) => void;
   applyEqPreset: (preset: string) => void;
   setEqBand: (band: EqBand, value: number) => void;
@@ -92,6 +103,17 @@ let fallbackTrackId: string | null = null;
 
 // 開始操作ごとのトークン。ピッチ音源の生成待ち中に別の曲/操作が始まったら破棄する
 let startToken = 0;
+
+// クロスフェード: 2つ目の要素で先読み再生中の次曲インデックス（nullなら重なりなし）
+let overlapNextIndex: number | null = null;
+
+// クロスフェード音源が無かった曲（同じ曲で無限に再試行しない）
+let crossfadeFallbackId: string | null = null;
+
+// ドパモードの先読み取得中フラグ
+let radioFetching = false;
+// 先読みが空振りしたときの再試行クールダウン
+let radioCooldownUntil = 0;
 
 function formatSemitones(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
@@ -152,6 +174,103 @@ function armGestureResume() {
     }
   };
   document.addEventListener("pointerdown", resume, { once: true });
+}
+
+/** 先読み再生（オーバーラップ）を中断して2つ目の要素を止める */
+function cancelOverlap() {
+  if (overlapNextIndex === null) return;
+  overlapNextIndex = null;
+  const secondary = getSecondaryAudio();
+  if (secondary) {
+    secondary.pause();
+    secondary.removeAttribute("src");
+    secondary.load();
+  }
+}
+
+/**
+ * クロスフェードの切り替え: 先読みで再生済みの次曲要素をメインに昇格する。
+ * iOSでは「曲が終わってから play()」が無音になる問題があるが、
+ * すでに再生中の要素を昇格するだけなのでバックグラウンドでも途切れない。
+ */
+function advanceOverlap(): boolean {
+  const nextIndex = overlapNextIndex;
+  overlapNextIndex = null;
+  if (nextIndex === null) return false;
+
+  const { queue, rate, preservesPitch, pitchSemitones } = usePlayer.getState();
+  const nextTrack = queue[nextIndex];
+  const incoming = getSecondaryAudio();
+
+  if (!nextTrack) {
+    if (incoming) {
+      incoming.pause();
+      incoming.removeAttribute("src");
+      incoming.load();
+    }
+    return false;
+  }
+
+  if (!incoming || incoming.error || !incoming.src || incoming.paused) {
+    // 先読みが失敗していたら通常の開始に任せる
+    if (incoming) {
+      incoming.pause();
+      incoming.removeAttribute("src");
+      incoming.load();
+    }
+    usePlayer.setState({ index: nextIndex, isPlaying: true, progress: 0, duration: 0 });
+    startTrack(nextTrack, rate, preservesPitch, pitchSemitones);
+    return true;
+  }
+
+  const oldMain = getAudio();
+  swapAudioRoles();
+  if (oldMain) {
+    oldMain.pause();
+    oldMain.removeAttribute("src");
+  }
+  const newMain = getAudio();
+  // EQ使用中なら新しいメイン要素をグラフに接続し直す（音質設定を維持）
+  if (newMain && eqGraphReady()) {
+    attachToEqGraph(newMain);
+  }
+  usePlayer.setState({
+    index: nextIndex,
+    isPlaying: true,
+    progress: newMain?.currentTime ?? 0,
+    duration: newMain?.duration || 0,
+    playbackError: null,
+    playbackNotice: null,
+  });
+  return true;
+}
+
+/** ドパモード: キュー残りが少なくなったら先読みで補充しておく（バックグラウンドでも繋がるように） */
+async function maybePrefetchRadio() {
+  const { dopaMode, queue, index } = usePlayer.getState();
+  if (!dopaMode || radioFetching) return;
+  if (Date.now() < radioCooldownUntil) return;
+  if (index < queue.length - 2) return;
+
+  radioFetching = true;
+  try {
+    const seed = [...queue].reverse().find((track) => track.kind === "upload") ?? null;
+    const additions = await fetchRadioTracks(
+      seed?.id ?? null,
+      queue.map((track) => track.id),
+    );
+    if (additions.length === 0) {
+      // 追加候補が無い/失敗した場合はしばらく再試行しない
+      radioCooldownUntil = Date.now() + 60_000;
+      return;
+    }
+    const latest = usePlayer.getState().queue;
+    // 先読み中にキューが変わっていたら破棄
+    if (latest !== queue) return;
+    usePlayer.setState({ queue: [...latest, ...additions] });
+  } finally {
+    radioFetching = false;
+  }
 }
 
 async function ensurePitchVariant(
@@ -246,6 +365,9 @@ function startTrack(
   const play = opts?.play ?? true;
   const position = opts?.position ?? 0;
 
+  // 新しい再生が始まるので先読み（クロスフェード）は中断
+  cancelOverlap();
+
   if (track.kind === "spotify") {
     getAudio()?.pause();
     usePlayer.setState({
@@ -307,7 +429,12 @@ function startTrack(
     }
     src = track.previewUrl;
   } else {
-    src = trackSrc(track.id);
+    // クロスフェードONならフェードを焼き込んだ音源を使う（無ければエラー時にフォールバック）
+    const { crossfade, chorusOnly } = usePlayer.getState();
+    src =
+      crossfade && !chorusOnly && crossfadeFallbackId !== track.id
+        ? `/api/tracks/${track.id}/crossfade`
+        : trackSrc(track.id);
   }
 
   fallbackTrackId = null;
@@ -443,6 +570,29 @@ export function handleAudioError(audio: HTMLAudioElement) {
     (mediaError.code === mediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
       mediaError.code === mediaError.MEDIA_ERR_DECODE);
 
+  // クロスフェード音源が無い/壊れている場合は通常音源へフォールバック
+  if (
+    isFallbackable &&
+    pitchSemitones === 0 &&
+    track.kind === "upload" &&
+    isCrossfadeSrc(audio.src) &&
+    crossfadeFallbackId !== track.id
+  ) {
+    crossfadeFallbackId = track.id;
+    const position = audio.currentTime;
+    console.warn("[player] crossfade source failed. Falling back to normal source");
+    audio.src = trackSrc(track.id);
+    audio.load();
+    applyPlaybackSettings(audio, { rate, preservesPitch });
+    const restore = () => {
+      audio.removeEventListener("loadedmetadata", restore);
+      if (position > 0) audio.currentTime = position;
+    };
+    audio.addEventListener("loadedmetadata", restore);
+    playWithRetry(audio, 1);
+    return;
+  }
+
   if (
     isFallbackable &&
     pitchSemitones === 0 &&
@@ -486,6 +636,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   playbackNotice: null,
   dopaMode: false,
   chorusOnly: false,
+  crossfade: true,
   eqEnabled: false,
   eqPreset: "flat",
   eqBass: 0,
@@ -533,6 +684,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const { isPlaying, queue, index, rate, preservesPitch, pitchSemitones } = get();
     if (!audio || queue.length === 0) return;
     if (isPlaying) {
+      cancelOverlap();
       audio.pause();
       set({ isPlaying: false });
       return;
@@ -546,6 +698,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   next: () => {
+    // クロスフェードで次の曲が先読み再生中なら、その要素をメインに昇格する
+    if (overlapNextIndex !== null && advanceOverlap()) return;
+
     const { queue, index, rate, preservesPitch, pitchSemitones, dopaMode } = get();
     const nextIndex = index + 1;
 
@@ -565,6 +720,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   prev: () => {
+    cancelOverlap();
     const audio = getAudio();
     const { queue, index, progress, rate, preservesPitch, pitchSemitones } = get();
     if (audio && progress > 3) {
@@ -586,6 +742,13 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const audio = getAudio();
     if (audio && Number.isFinite(sec)) {
       audio.currentTime = sec;
+    }
+    const { duration } = get();
+    if (
+      overlapNextIndex !== null &&
+      (!Number.isFinite(sec) || sec < duration - CROSSFADE_SEC)
+    ) {
+      cancelOverlap();
     }
     set({ progress: sec });
   },
@@ -638,7 +801,76 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     set({ chorusOnly: value });
     if (!value) {
       resetAudioVolume();
+    } else {
+      cancelOverlap();
     }
+  },
+
+  setCrossfade: (value) => {
+    persist(CROSSFADE_KEY, String(value));
+    if (!value) cancelOverlap();
+    set({ crossfade: value });
+  },
+
+  maybeCrossfade: (time, duration) => {
+    const state = get();
+    if (!state.isPlaying) return;
+    // ドパモード: キュー残りが少なくなったら先読みで補充しておく
+    if (state.dopaMode) void maybePrefetchRadio();
+    if (!state.crossfade || state.chorusOnly) return;
+    if (overlapNextIndex !== null) return;
+    if (!duration || !Number.isFinite(duration)) return;
+    if (time < duration - CROSSFADE_SEC) return;
+
+    const { queue, index, rate, preservesPitch } = state;
+    const current = queue[index];
+    const nextTrack = queue[index + 1];
+    if (!current || !nextTrack || current.kind !== "upload") return;
+
+    const main = getAudio();
+    if (!main || !isCrossfadeSrc(main.src)) return;
+
+    const secondary = getSecondaryAudio();
+    if (!secondary) return;
+
+    const nextSrc =
+      nextTrack.kind === "upload"
+        ? `/api/tracks/${nextTrack.id}/crossfade`
+        : (nextTrack.previewUrl ?? null);
+    if (!nextSrc) return;
+
+    overlapNextIndex = index + 1;
+    secondary.src = nextSrc;
+    secondary.load();
+    applyPlaybackSettings(secondary, { rate, preservesPitch });
+
+    const clearOnError = () => {
+      secondary.removeEventListener("error", clearOnError);
+      if (overlapNextIndex === index + 1) cancelOverlap();
+    };
+    secondary.addEventListener("error", clearOnError);
+
+    const startSecondary = (attempt: number) => {
+      secondary.play().catch((error: unknown) => {
+        const name = error instanceof Error ? error.name : "";
+        if (overlapNextIndex !== index + 1) return;
+        if (attempt < 1 && (name === "AbortError" || name === "NotSupportedError")) {
+          const retry = () => {
+            secondary.removeEventListener("canplay", retry);
+            startSecondary(attempt + 1);
+          };
+          if (secondary.readyState >= 2) {
+            retry();
+          } else {
+            secondary.addEventListener("canplay", retry);
+          }
+          return;
+        }
+        // 自動再生できない環境（バックグラウンド等）では通常の切り替えに任せる
+        cancelOverlap();
+      });
+    };
+    startSecondary(0);
   },
 
   setEqEnabled: (value) => {
@@ -676,6 +908,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   shuffleQueue: () => {
+    cancelOverlap();
     const { queue, index } = get();
     if (queue.length < 2) return;
     const current = queue[index];
@@ -732,6 +965,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       : 0;
     const dopaMode = localStorage.getItem(DOPA_MODE_KEY) === "true";
     const chorusOnly = localStorage.getItem(CHORUS_ONLY_KEY) === "true";
+    const crossfade = localStorage.getItem(CROSSFADE_KEY) !== "false";
     const eqEnabled = localStorage.getItem(EQ_ENABLED_KEY) === "true";
     const eqPreset = localStorage.getItem(EQ_PRESET_KEY) ?? "flat";
     const eqBass = Number(localStorage.getItem(EQ_BASS_KEY) ?? "0") || 0;
@@ -748,6 +982,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       pitchSemitones,
       dopaMode,
       chorusOnly,
+      crossfade,
       eqEnabled,
       eqPreset,
       eqBass,
@@ -781,6 +1016,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   removeTrack: (trackId) => {
+    cancelOverlap();
     const { queue, index, isPlaying, rate, preservesPitch, pitchSemitones } = get();
     const removeIndex = queue.findIndex((track) => track.id === trackId);
     if (removeIndex < 0) return;
