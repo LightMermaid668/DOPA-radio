@@ -22,6 +22,15 @@ export function isIos(): boolean {
 }
 
 /**
+ * 再生速度の上限。
+ * iOS (AVPlayer) は 2.5x 以上で再生が止まるため 2.0x まで。
+ * それ以外のクライアントは 4.0x まで許可する。
+ */
+export function maxPlaybackRate(): number {
+  return isIos() ? 2 : 4;
+}
+
+/**
  * HLS（m3u8）を使うのは iOS/iPadOS のみ。
  * macOS Chrome などは canPlayType が対応と答えても <audio> での HLS 再生に
  * 失敗することがあるため、それ以外は AAC ファイルを直接再生する。

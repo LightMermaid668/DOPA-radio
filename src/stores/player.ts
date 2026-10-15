@@ -4,6 +4,7 @@ import {
   applyPlaybackSettings,
   getAudio,
   isIos,
+  maxPlaybackRate,
   trackSrc,
 } from "@/lib/player-audio";
 
@@ -284,7 +285,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   setRate: (rate) => {
-    const clamped = Math.min(4, Math.max(0.5, rate));
+    const clamped = Math.min(maxPlaybackRate(), Math.max(0.5, rate));
     if (typeof window !== "undefined") {
       localStorage.setItem(RATE_KEY, String(clamped));
     }
@@ -325,7 +326,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   hydrateSettings: () => {
     if (typeof window === "undefined") return;
     const storedRate = Number(localStorage.getItem(RATE_KEY) ?? "1");
-    const rate = Number.isFinite(storedRate) ? Math.min(4, Math.max(0.5, storedRate)) : 1;
+    const rate = Number.isFinite(storedRate)
+      ? Math.min(maxPlaybackRate(), Math.max(0.5, storedRate))
+      : 1;
     const preservesPitch = localStorage.getItem(PITCH_KEY) !== "false";
     const storedPitch = Number(localStorage.getItem(PITCH_SEMITONES_KEY) ?? "0");
     const pitchSemitones = Number.isFinite(storedPitch)

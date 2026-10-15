@@ -5,11 +5,12 @@
 import { Gauge, Loader2, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { applyPlaybackSettings, getAudio } from "@/lib/player-audio";
+import { applyPlaybackSettings, getAudio, maxPlaybackRate } from "@/lib/player-audio";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer } from "@/stores/player";
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
+const PITCH_OPTIONS = Array.from({ length: 25 }, (_, index) => index - 12);
 
 function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "0:00";
@@ -43,6 +44,7 @@ export function PlayerBar() {
   const retryCurrent = usePlayer((s) => s.retryCurrent);
 
   const track = queue[index] ?? null;
+  const maxRate = maxPlaybackRate();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -207,9 +209,9 @@ export function PlayerBar() {
                     <input
                       type="range"
                       min={0.5}
-                      max={4}
+                      max={maxRate}
                       step={0.05}
-                      value={rate}
+                      value={Math.min(rate, maxRate)}
                       onChange={(e) => setRate(Number(e.target.value))}
                       className="mt-1 w-full cursor-pointer accent-amber-500"
                       aria-label="再生速度スライダー"
@@ -217,50 +219,59 @@ export function PlayerBar() {
                   </div>
 
                   <div className="mt-2 grid grid-cols-4 gap-1">
-                    {RATE_OPTIONS.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => setRate(option)}
-                        className={cn(
-                          "rounded-lg px-1 py-1 text-center text-[11px]",
-                          option === rate
-                            ? "bg-dopa-800 font-semibold text-accent"
-                            : "text-zinc-300 hover:bg-dopa-800",
-                        )}
-                      >
-                        {option}x
-                      </button>
-                    ))}
+                    {RATE_OPTIONS.map((option) => {
+                      const disabled = option > maxRate;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setRate(option)}
+                          className={cn(
+                            "rounded-lg px-1 py-1 text-center text-[11px]",
+                            disabled
+                              ? "cursor-not-allowed text-zinc-600 line-through"
+                              : option === rate
+                                ? "bg-dopa-800 font-semibold text-accent"
+                                : "text-zinc-300 hover:bg-dopa-800",
+                          )}
+                        >
+                          {option}x
+                        </button>
+                      );
+                    })}
                   </div>
+                  {maxRate < 4 ? (
+                    <p className="mt-1 px-1 text-[10px] text-zinc-500">
+                      この端末では 2.5x 以上は再生できないため無効化しています
+                    </p>
+                  ) : null}
 
                   <div className="my-2 h-px bg-dopa-800" />
 
                   <div className="px-1">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
                       <span>ピッチ（音程のみ）</span>
-                      <span
+                      <select
+                        value={pitchSemitones}
+                        onChange={(e) => setPitchSemitones(Number(e.target.value))}
                         className={cn(
-                          "font-semibold",
-                          pitchSemitones === 0 ? "text-zinc-400" : "text-accent",
+                          "h-7 rounded-lg border bg-dopa-950 px-1.5 text-[11px] outline-none focus:border-accent",
+                          pitchSemitones === 0
+                            ? "border-dopa-700 text-zinc-300"
+                            : "border-accent text-accent",
                         )}
+                        aria-label="ピッチ選択"
                       >
-                        {pitchSemitones > 0 ? `+${pitchSemitones}` : pitchSemitones} 半音
-                      </span>
+                        {PITCH_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option > 0 ? `+${option}` : option} 半音
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <input
-                      type="range"
-                      min={-12}
-                      max={12}
-                      step={1}
-                      value={pitchSemitones}
-                      onChange={(e) => setPitchSemitones(Number(e.target.value))}
-                      className="mt-1 w-full cursor-pointer accent-amber-500"
-                      aria-label="ピッチスライダー"
-                    />
                     <p className="mt-1 text-[10px] leading-tight text-zinc-500">
-                      初回はサーバーで音源を生成します（数秒）
-
+                      初回はサーバーで音源を生成します（数秒・一度生成したら即時）
                     </p>
                   </div>
 
