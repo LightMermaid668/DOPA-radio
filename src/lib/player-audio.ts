@@ -1,7 +1,6 @@
 "use client";
 
 let audio: HTMLAudioElement | null = null;
-let hlsSupported: boolean | null = null;
 
 export function getAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
@@ -12,17 +11,23 @@ export function getAudio(): HTMLAudioElement | null {
   return audio;
 }
 
-export function supportsNativeHls(): boolean {
-  if (typeof document === "undefined") return false;
-  if (hlsSupported === null) {
-    const probe = document.createElement("audio");
-    hlsSupported = probe.canPlayType("application/vnd.apple.mpegurl") !== "";
-  }
-  return hlsSupported;
+export function isIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  // iPadOS 13+ は Macintosh を名乗るためタッチ対応で判定
+  return (
+    ua.includes("Macintosh") && typeof document !== "undefined" && "ontouchend" in document
+  );
 }
 
+/**
+ * HLS（m3u8）を使うのは iOS/iPadOS のみ。
+ * macOS Chrome などは canPlayType が対応と答えても <audio> での HLS 再生に
+ * 失敗することがあるため、それ以外は AAC ファイルを直接再生する。
+ */
 export function trackSrc(trackId: string): string {
-  return supportsNativeHls()
+  return isIos()
     ? `/api/tracks/${trackId}/stream.m3u8`
     : `/api/tracks/${trackId}/file`;
 }

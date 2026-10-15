@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import { applyPlaybackSettings, getAudio, trackSrc } from "@/lib/player-audio";
+import {
+  applyPlaybackSettings,
+  getAudio,
+  isIos,
+  trackSrc,
+} from "@/lib/player-audio";
 
 const RATE_KEY = "dopa:playback-rate";
 const PITCH_KEY = "dopa:preserves-pitch";
@@ -21,6 +26,7 @@ type PlayerState = {
   duration: number;
   rate: number;
   preservesPitch: boolean;
+  playbackError: string | null;
   playQueue: (tracks: PlayerTrack[], index?: number) => void;
   togglePlay: () => void;
   next: () => void;
@@ -29,14 +35,76 @@ type PlayerState = {
   setRate: (rate: number) => void;
   setPreservesPitch: (value: boolean) => void;
   hydrateSettings: () => void;
+  retryCurrent: () => void;
 };
+
+let fallbackTrackId: string | null = null;
+
+function reportPlayError(error: unknown) {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.warn("[player] play() failed:", error);
+  usePlayer.setState({ playbackError: `再生を開始できません（${message}）` });
+}
+
+function playWithRetry(audio: HTMLAudioElement, attempt: number) {
+  audio.play().catch((error: unknown) => {
+    const name = error instanceof Error ? error.name : "";
+    if (attempt < 1 && (name === "AbortError" || name === "NotSupportedError")) {
+      const retry = () => {
+        audio.removeEventListener("canplay", retry);
+        audio.play().catch((retryError) => reportPlayError(retryError));
+      };
+      audio.addEventListener("canplay", retry);
+      return;
+    }
+    reportPlayError(error);
+  });
+}
 
 function startTrack(track: PlayerTrack, rate: number, preservesPitch: boolean) {
   const audio = getAudio();
   if (!audio) return;
+  fallbackTrackId = null;
+  usePlayer.setState({ playbackError: null });
   audio.src = trackSrc(track.id);
+  audio.load();
   applyPlaybackSettings(audio, { rate, preservesPitch });
-  void audio.play().catch(() => {});
+  playWithRetry(audio, 0);
+}
+
+export function handleAudioError(audio: HTMLAudioElement) {
+  const mediaError = audio.error;
+  const { queue, index, rate, preservesPitch } = usePlayer.getState();
+  const track = queue[index];
+  if (!track) return;
+
+  const isFallbackable =
+    mediaError &&
+    (mediaError.code === mediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+      mediaError.code === mediaError.MEDIA_ERR_DECODE);
+
+  if (isFallbackable && isIos() && fallbackTrackId !== track.id) {
+    fallbackTrackId = track.id;
+    const position = audio.currentTime;
+    console.warn(
+      `[player] HLS playback failed (code ${mediaError.code}). Falling back to AAC file`,
+    );
+    audio.src = `/api/tracks/${track.id}/file`;
+    audio.load();
+    applyPlaybackSettings(audio, { rate, preservesPitch });
+    const restore = () => {
+      audio.removeEventListener("loadedmetadata", restore);
+      if (position > 0) audio.currentTime = position;
+    };
+    audio.addEventListener("loadedmetadata", restore);
+    playWithRetry(audio, 1);
+    return;
+  }
+
+  console.warn("[player] media error:", mediaError);
+  const code = mediaError?.code ?? "?";
+  const detail = mediaError?.message || "メディアを読み込めませんでした";
+  usePlayer.setState({ playbackError: `再生に失敗しました（code ${code}: ${detail}）` });
 }
 
 export const usePlayer = create<PlayerState>((set, get) => ({
@@ -47,6 +115,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   duration: 0,
   rate: 1,
   preservesPitch: true,
+  playbackError: null,
 
   playQueue: (tracks, index = 0) => {
     if (tracks.length === 0) return;
@@ -68,7 +137,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (!audio.src) {
       startTrack(queue[index], rate, preservesPitch);
     } else {
-      void audio.play().catch(() => {});
+      playWithRetry(audio, 0);
     }
     set({ isPlaying: true });
   },
@@ -144,5 +213,13 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
     }
+  },
+
+  retryCurrent: () => {
+    const { queue, index, rate, preservesPitch } = get();
+    const track = queue[index];
+    if (!track) return;
+    set({ playbackError: null });
+    startTrack(track, rate, preservesPitch);
   },
 }));

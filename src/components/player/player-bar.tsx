@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyPlaybackSettings, getAudio } from "@/lib/player-audio";
 import { cn } from "@/lib/utils";
-import { usePlayer } from "@/stores/player";
+import { handleAudioError, usePlayer } from "@/stores/player";
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
 
@@ -36,6 +36,8 @@ export function PlayerBar() {
   const setRate = usePlayer((s) => s.setRate);
   const setPreservesPitch = usePlayer((s) => s.setPreservesPitch);
   const hydrateSettings = usePlayer((s) => s.hydrateSettings);
+  const playbackError = usePlayer((s) => s.playbackError);
+  const retryCurrent = usePlayer((s) => s.retryCurrent);
 
   const track = queue[index] ?? null;
 
@@ -54,7 +56,14 @@ export function PlayerBar() {
 
     const handleTime = () =>
       usePlayer.setState({ progress: audio.currentTime, duration: audio.duration || 0 });
-    const handlePlay = () => usePlayer.setState({ isPlaying: true });
+    const handlePlay = () => {
+      // Safari が src 切替時に再生速度/ピッチをリセットする場合があるため再適用
+      applyPlaybackSettings(audio, {
+        rate: usePlayer.getState().rate,
+        preservesPitch: usePlayer.getState().preservesPitch,
+      });
+      usePlayer.setState({ isPlaying: true });
+    };
     const handlePause = () => usePlayer.setState({ isPlaying: false });
     const handleEnded = () => usePlayer.getState().next();
     const handleLoaded = () =>
@@ -62,18 +71,21 @@ export function PlayerBar() {
         rate: usePlayer.getState().rate,
         preservesPitch: usePlayer.getState().preservesPitch,
       });
+    const handleError = () => handleAudioError(audio);
 
     audio.addEventListener("timeupdate", handleTime);
     audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("loadedmetadata", handleLoaded);
+    audio.addEventListener("error", handleError);
     return () => {
       audio.removeEventListener("timeupdate", handleTime);
       audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("loadedmetadata", handleLoaded);
+      audio.removeEventListener("error", handleError);
     };
   }, []);
 
@@ -108,7 +120,12 @@ export function PlayerBar() {
 
   return (
     <>
-      <div ref={containerRef} className="hidden" />
+      {/* iOS Safari は display:none 内のメディアを読み込まないため、サイズ0の絶対配置で保持する */}
+      <div
+        ref={containerRef}
+        aria-hidden
+        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+      />
       {track ? (
         <>
           <div className="h-28" aria-hidden />
@@ -227,6 +244,19 @@ export function PlayerBar() {
             />
             <span className="w-9">{formatTime(duration)}</span>
           </div>
+
+          {playbackError ? (
+            <div className="mt-2 flex items-center gap-3 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+              <span className="min-w-0 flex-1 truncate">{playbackError}</span>
+              <button
+                type="button"
+                onClick={retryCurrent}
+                className="shrink-0 rounded-full border border-red-400/40 px-2.5 py-0.5 font-semibold text-red-200 hover:bg-red-500/10"
+              >
+                再試行
+              </button>
+            </div>
+          ) : null}
             </div>
           </div>
         </>
