@@ -225,7 +225,7 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                 type="checkbox"
                 checked={selected.has(track.id)}
                 onChange={() => toggleSelected(track.id)}
-                className="size-4 shrink-0 accent-amber-500"
+                className="size-4 shrink-0 accent-fuchsia-500"
                 aria-label={`${track.title} を選択`}
               />
               <button

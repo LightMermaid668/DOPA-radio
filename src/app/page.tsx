@@ -1,27 +1,32 @@
 import { Headphones, Link2, ListMusic, UploadCloud } from "lucide-react";
 import Link from "next/link";
 
+import { Logo } from "@/components/logo";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const FEATURES = [
   {
     icon: UploadCloud,
+    color: "text-[#ff5f6d]",
     title: "曲を持ち寄る",
     description: "メンバーがアップロードした音源をみんなで聴ける。市販の楽曲はApple Musicリンクで追加。",
   },
   {
     icon: ListMusic,
+    color: "text-[#f7e463]",
     title: "プレイリストを組む",
     description: "公開・限定公開・非公開を選べるプレイリスト。みんなのドパプレイリストを見つけよう。",
   },
   {
     icon: Headphones,
+    color: "text-[#4ade80]",
     title: "裏でずっと流れる",
-    description: "画面を閉じてもロックしても再生し続ける。ながら聴き前提のプレイヤー。",
+    description: "画面を閉じてもロックしても再生し続ける。倍速・ピッチ変更も自由。",
   },
   {
     icon: Link2,
+    color: "text-[#38bdf8]",
     title: "共有する",
     description: "プレイリストはリンクひとつで共有。Apple MusicやSpotifyの曲もまとめて並べられる。",
   },
@@ -31,9 +36,7 @@ export default function LandingPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6">
       <header className="flex items-center justify-between py-6">
-        <span className="text-lg font-black tracking-tight">
-          DOPA<span className="text-accent">-radio</span>
-        </span>
+        <Logo />
         <nav className="flex items-center gap-3">
           <Link href="/login" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
             ログイン
@@ -49,7 +52,7 @@ export default function LandingPage() {
           ドパガキのための音楽基地
         </p>
         <h1 className="max-w-3xl text-4xl leading-tight font-black tracking-tight sm:text-6xl">
-          ドパドパする曲を、
+          <span className="text-rainbow">ドパドパ</span>する曲を、
           <br />
           みんなで集めて共有しよう。
         </h1>
@@ -75,7 +78,7 @@ export default function LandingPage() {
             key={feature.title}
             className="rounded-2xl border border-dopa-800 bg-dopa-900 p-6"
           >
-            <feature.icon className="mb-4 size-6 text-accent" aria-hidden />
+            <feature.icon className={cn("mb-4 size-6", feature.color)} aria-hidden />
             <h2 className="mb-2 text-lg font-bold">{feature.title}</h2>
             <p className="text-sm leading-relaxed text-zinc-400">{feature.description}</p>
           </div>

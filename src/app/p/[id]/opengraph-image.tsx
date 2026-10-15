@@ -86,14 +86,15 @@ export default async function PlaylistOgImage({
                 width: 56,
                 height: 56,
                 borderRadius: 28,
-                background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                background:
+                  "linear-gradient(135deg, #ff5f6d, #f7e463, #4ade80, #38bdf8, #a78bfa)",
                 display: "flex",
               }}
             />
             <span style={{ color: "white", fontSize: 40, fontWeight: 800 }}>DOPA-radio</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <span style={{ color: "#f59e0b", fontSize: 28, fontWeight: 700, letterSpacing: 6 }}>
+            <span style={{ color: "#e879f9", fontSize: 28, fontWeight: 700, letterSpacing: 6 }}>
               PLAYLIST
             </span>
             <span style={{ color: "white", fontSize: 44, fontWeight: 700 }}>

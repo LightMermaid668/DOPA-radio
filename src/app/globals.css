@@ -5,10 +5,39 @@
   --color-dopa-900: #121216;
   --color-dopa-800: #1b1b22;
   --color-dopa-700: #26262f;
-  --color-accent: #f59e0b;
-  --color-accent-strong: #f97316;
+  --color-accent: #e879f9;
+  --color-accent-strong: #d946ef;
   --font-sans: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP",
     system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@utility bg-rainbow {
+  background-image: linear-gradient(
+    100deg,
+    #ff5f6d 0%,
+    #ff9f43 16%,
+    #f7e463 32%,
+    #4ade80 50%,
+    #38bdf8 66%,
+    #a78bfa 84%,
+    #f472b6 100%
+  );
+}
+
+@utility text-rainbow {
+  background-image: linear-gradient(
+    100deg,
+    #ff5f6d 0%,
+    #ff9f43 16%,
+    #f7e463 32%,
+    #4ade80 50%,
+    #38bdf8 66%,
+    #a78bfa 84%,
+    #f472b6 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
 html {

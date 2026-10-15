@@ -135,6 +135,7 @@ export function PlayerBar() {
         <>
           <div className="h-28" aria-hidden />
           <div className="fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur">
+            <div className="bg-rainbow h-0.5 w-full" aria-hidden />
             <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
           <div className="flex items-center gap-3">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">
@@ -146,7 +147,7 @@ export function PlayerBar() {
                   loading="lazy"
                 />
               ) : (
-                <span className="text-xs text-zinc-500">DOPA</span>
+                <span className="text-rainbow text-xs font-black">DOPA</span>
               )}
             </div>
             <div className="min-w-0 flex-1">
@@ -168,7 +169,7 @@ export function PlayerBar() {
               <button
                 type="button"
                 onClick={togglePlay}
-                className="flex size-10 items-center justify-center rounded-full bg-accent text-dopa-950 hover:bg-accent-strong"
+                className="bg-rainbow flex size-10 items-center justify-center rounded-full text-dopa-950 hover:brightness-110"
                 aria-label={isPlaying ? "一時停止" : "再生"}
               >
                 {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
@@ -213,7 +214,7 @@ export function PlayerBar() {
                       step={0.05}
                       value={Math.min(rate, maxRate)}
                       onChange={(e) => setRate(Number(e.target.value))}
-                      className="mt-1 w-full cursor-pointer accent-amber-500"
+                      className="mt-1 w-full cursor-pointer accent-fuchsia-500"
                       aria-label="再生速度スライダー"
                     />
                   </div>
@@ -283,7 +284,7 @@ export function PlayerBar() {
                       type="checkbox"
                       checked={preservesPitch}
                       onChange={(e) => setPreservesPitch(e.target.checked)}
-                      className="accent-amber-500"
+                      className="accent-fuchsia-500"
                     />
                   </label>
                 </div>
@@ -300,7 +301,7 @@ export function PlayerBar() {
               step={0.1}
               value={Math.min(progress, duration || 0)}
               onChange={(e) => seekTo(Number(e.target.value))}
-              className="h-1 w-full cursor-pointer accent-amber-500"
+              className="h-1 w-full cursor-pointer accent-fuchsia-500"
               aria-label="シーク"
             />
             <span className="w-9">{formatTime(duration)}</span>

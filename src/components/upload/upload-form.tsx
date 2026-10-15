@@ -126,7 +126,7 @@ export function UploadForm() {
           type="checkbox"
           checked={rightsConfirmed}
           onChange={(e) => setRightsConfirmed(e.target.checked)}
-          className="mt-0.5 size-4 accent-amber-500"
+          className="mt-0.5 size-4 accent-fuchsia-500"
         />
         <span className="text-sm leading-relaxed text-zinc-300">
           アップロードする音源について、自分が権利を持っているか、権利者から許諾を得ていることを確認しました。

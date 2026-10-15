@@ -6,6 +6,7 @@ import { desc, eq } from "drizzle-orm";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { TrackList, type LibraryTrack } from "@/components/library/track-list";
+import { Logo } from "@/components/logo";
 import { buttonVariants } from "@/components/ui/button";
 import { db } from "@/db";
 import { tracks } from "@/db/schema";
@@ -56,9 +57,7 @@ export default async function LibraryPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
       <header className="flex items-center justify-between py-6">
-        <span className="text-lg font-black tracking-tight">
-          DOPA<span className="text-accent">-radio</span>
-        </span>
+        <Logo />
         <div className="flex items-center gap-4">
           <span className="hidden text-xs text-zinc-400 sm:inline">{user.name}</span>
           <Link

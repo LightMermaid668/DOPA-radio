@@ -332,7 +332,7 @@ export function PlaylistDetail({ data }: { data: PlaylistDetailData }) {
                             return next;
                           })
                         }
-                        className="size-4 accent-amber-500"
+                        className="size-4 accent-fuchsia-500"
                       />
                       <span className="min-w-0 flex-1 truncate text-sm">{option.title}</span>
                       <span className="shrink-0 text-xs text-zinc-500">

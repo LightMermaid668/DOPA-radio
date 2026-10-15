@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 
+import { Logo } from "@/components/logo";
 import { PublicPlayButton, type PublicTrack } from "@/components/playlists/public-play-button";
 import { db } from "@/db";
 import { playlistItems, playlists, tracks } from "@/db/schema";
@@ -90,8 +91,8 @@ export default async function PublicPlaylistPage({
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-6">
       <header className="py-6">
-        <Link href="/" className="text-lg font-black tracking-tight">
-          DOPA<span className="text-accent">-radio</span>
+        <Link href="/">
+          <Logo />
         </Link>
       </header>
 

@@ -6,6 +6,7 @@ import { count, desc, eq } from "drizzle-orm";
 import { ListMusic } from "lucide-react";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { Logo } from "@/components/logo";
 import { CreatePlaylistForm } from "@/components/playlists/create-playlist-form";
 import { buttonVariants } from "@/components/ui/button";
 import { db } from "@/db";
@@ -44,9 +45,7 @@ export default async function PlaylistsPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
       <header className="flex items-center justify-between py-6">
-        <span className="text-lg font-black tracking-tight">
-          DOPA<span className="text-accent">-radio</span>
-        </span>
+        <Logo />
         <div className="flex items-center gap-3">
           <Link
             href="/library"
