@@ -53,11 +53,14 @@ curl -fsSL -o install-autodeploy.sh \
 #   b) Mac から: scp deploy/install-autodeploy.sh root@192.168.1.50:/root/
 
 chmod +x install-autodeploy.sh
-sudo ./install-autodeploy.sh https://github.com/LightMermaid668/DOPA-radio.git
+./install-autodeploy.sh https://github.com/LightMermaid668/DOPA-radio.git
 ```
 
+> - LXC の Debian 最小構成には `sudo` が入っていないことがあります。root でログインしている場合、`sudo` は不要です（そのまま `./install-autodeploy.sh ...`）。
+> - root 以外のユーザーで実行する場合は `sudo` を付けてください。
+
 > private リポジトリに変更した場合は SSH URL を渡してください:
-> `sudo ./install-autodeploy.sh git@github.com:LightMermaid668/DOPA-radio.git`
+> `./install-autodeploy.sh git@github.com:LightMermaid668/DOPA-radio.git`
 > （Deploy Key を生成し、GitHub への登録手順を案内します）
 
 このスクリプトが行うこと:
