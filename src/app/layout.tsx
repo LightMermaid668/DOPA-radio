@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { PlayerBar } from "@/components/player/player-bar";
 import { PwaRegister } from "@/components/pwa-register";
+import { DialogHost } from "@/components/ui/dialog";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -42,6 +43,7 @@ export default function RootLayout({
       <body>
         {children}
         <PlayerBar />
+        <DialogHost />
         <PwaRegister />
       </body>
     </html>

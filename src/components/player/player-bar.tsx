@@ -49,6 +49,8 @@ export function PlayerBar() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chorusGuardRef = useRef<string | null>(null);
+  const soundPopoverRef = useRef<HTMLDivElement>(null);
+  const speedPopoverRef = useRef<HTMLDivElement>(null);
   const [panel, setPanel] = useState<"speed" | "sound" | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
 
@@ -89,6 +91,20 @@ export function PlayerBar() {
   const track = queue[index] ?? null;
   const maxRate = maxPlaybackRate();
   const soundActive = eqEnabled || boostLevel > 1.001;
+
+  // ポップオーバー（速度/サウンド）は外側をタップしたら閉じる
+  useEffect(() => {
+    if (!panel) return;
+    const activeRef = panel === "sound" ? soundPopoverRef : speedPopoverRef;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && activeRef.current && !activeRef.current.contains(target)) {
+        setPanel(null);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [panel]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -436,7 +452,7 @@ export function PlayerBar() {
                 <ListMusic className="size-4" />
               </button>
 
-              <div className="relative shrink-0">
+              <div ref={soundPopoverRef} className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setPanel((current) => (current === "sound" ? null : "sound"))}
@@ -549,7 +565,7 @@ export function PlayerBar() {
                 ) : null}
               </div>
 
-              <div className="relative shrink-0">
+              <div ref={speedPopoverRef} className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setPanel((current) => (current === "speed" ? null : "speed"))}

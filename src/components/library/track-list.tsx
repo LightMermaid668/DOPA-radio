@@ -25,6 +25,7 @@ import {
 
 import { ChorusEditor } from "@/components/library/chorus-editor";
 import { buttonVariants, Button } from "@/components/ui/button";
+import { confirmDialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/stores/player";
 
@@ -150,7 +151,13 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   }
 
   async function deleteTrack(id: string, title: string) {
-    if (!window.confirm(`「${title}」を削除しますか？元に戻せません。`)) return;
+    const confirmed = await confirmDialog({
+      title: `「${title}」を削除しますか？`,
+      description: "元に戻せません。",
+      confirmLabel: "削除",
+      danger: true,
+    });
+    if (!confirmed) return;
     setBusyId(id);
     try {
       const res = await fetch(`/api/tracks/${id}`, { method: "DELETE" });

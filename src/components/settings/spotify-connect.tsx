@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { confirmDialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 const STATUS_MESSAGES: Record<string, string> = {
@@ -25,7 +26,12 @@ export function SpotifyConnect({
   const [busy, setBusy] = useState(false);
 
   async function disconnect() {
-    if (!window.confirm("Spotify連携を解除しますか？")) return;
+    const confirmed = await confirmDialog({
+      title: "Spotify連携を解除しますか？",
+      confirmLabel: "解除",
+      danger: true,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await fetch("/api/integrations/spotify", { method: "DELETE" });

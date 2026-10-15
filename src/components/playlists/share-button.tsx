@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Share2 } from "lucide-react";
 
+import { promptDialog } from "@/components/ui/dialog";
+
 export function ShareButton({ path, title }: { path: string; title: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -21,7 +23,12 @@ export function ShareButton({ path, title }: { path: string; title: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      window.prompt("このURLをコピーしてください", url);
+      void promptDialog({
+        title: "URLをコピー",
+        description: "クリップボードにコピーできませんでした。手動でコピーしてください。",
+        defaultValue: url,
+        confirmLabel: "閉じる",
+      });
     }
   }
 

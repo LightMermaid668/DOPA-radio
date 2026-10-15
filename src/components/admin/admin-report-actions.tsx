@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, EyeOff, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { confirmDialog } from "@/components/ui/dialog";
 
 export function AdminReportActions({
   reportId,
@@ -35,7 +36,13 @@ export function AdminReportActions({
   }
 
   async function deleteTrack() {
-    if (!window.confirm("この曲を削除しますか？（元に戻せません）")) return;
+    const confirmed = await confirmDialog({
+      title: "この曲を削除しますか？",
+      description: "元に戻せません。",
+      confirmLabel: "削除",
+      danger: true,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await fetch(`/api/admin/tracks/${targetId}`, { method: "DELETE" });
@@ -60,7 +67,13 @@ export function AdminReportActions({
   }
 
   async function deletePlaylist() {
-    if (!window.confirm("このプレイリストを削除しますか？（元に戻せません）")) return;
+    const confirmed = await confirmDialog({
+      title: "このプレイリストを削除しますか？",
+      description: "元に戻せません。",
+      confirmLabel: "削除",
+      danger: true,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await fetch(`/api/admin/playlists/${targetId}`, { method: "DELETE" });

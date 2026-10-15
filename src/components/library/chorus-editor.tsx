@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Check, Pause, Play, RotateCcw, Scissors, X } from "lucide-react";
@@ -36,6 +36,54 @@ export function ChorusEditor({
   const current = usePlayer((s) => s.queue[s.index] ?? null);
   const isCurrent = current?.id === track.id;
   const totalDuration = isCurrent && duration > 0 ? duration : (track.durationSec ?? 0);
+
+  // 未解析の曲（サビデータ無し）は開いた時に自動検出を実行
+  const autoRequestedRef = useRef(false);
+  useEffect(() => {
+    if (autoRequestedRef.current) return;
+    if (track.status !== "ready") return;
+    if (track.chorusSource != null || track.chorusStartSec != null) return;
+    autoRequestedRef.current = true;
+    void (async () => {
+      try {
+        await fetch(`/api/tracks/${track.id}/chorus/detect`, { method: "POST" });
+        setNotice("サビを自動検出しています（数秒後に反映）…");
+        let attempts = 0;
+        const timer = window.setInterval(async () => {
+          attempts += 1;
+          try {
+            const res = await fetch(`/api/tracks/${track.id}`);
+            if (res.ok) {
+              const body = (await res.json()) as {
+                track?: {
+                  chorusStartSec?: number | null;
+                  chorusEndSec?: number | null;
+                  chorusSource?: string | null;
+                };
+              };
+              const value = body.track;
+              if (value?.chorusSource === "auto" && value.chorusStartSec != null) {
+                window.clearInterval(timer);
+                setStart(value.chorusStartSec);
+                setEnd(value.chorusEndSec ?? null);
+                setNotice("サビを検出しました");
+                router.refresh();
+                return;
+              }
+            }
+          } catch {
+            /* ポーリング続行 */
+          }
+          if (attempts >= 8) {
+            window.clearInterval(timer);
+            setNotice("自動検出できませんでした。手動で範囲を設定してください");
+          }
+        }, 2500);
+      } catch {
+        setNotice("自動検出を開始できませんでした");
+      }
+    })();
+  }, [track, router]);
 
   // プレビュー終了監視（サビ終端で停止）
   useEffect(() => {

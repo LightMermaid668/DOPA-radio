@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { QrCode } from "lucide-react";
 
+import { promptDialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export function QrShareButton({
@@ -43,7 +44,12 @@ export function QrShareButton({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      window.prompt("このURLをコピーしてください", url);
+      void promptDialog({
+        title: "URLをコピー",
+        description: "クリップボードにコピーできませんでした。手動でコピーしてください。",
+        defaultValue: url,
+        confirmLabel: "閉じる",
+      });
     }
   }
 

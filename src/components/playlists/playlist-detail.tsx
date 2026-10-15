@@ -22,6 +22,7 @@ import {
 import { ShareButton } from "@/components/playlists/share-button";
 import { QrShareButton } from "@/components/share/qr-share-button";
 import { Button } from "@/components/ui/button";
+import { confirmDialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { usePlayer, type PlayerTrack } from "@/stores/player";
 
@@ -271,7 +272,13 @@ export function PlaylistDetail({
   }
 
   async function deletePlaylist() {
-    if (!window.confirm(`「${data.title}」を削除しますか？元に戻せません。`)) return;
+    const confirmed = await confirmDialog({
+      title: `「${data.title}」を削除しますか？`,
+      description: "元に戻せません。",
+      confirmLabel: "削除",
+      danger: true,
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await fetch(`/api/playlists/${data.id}`, { method: "DELETE" });
