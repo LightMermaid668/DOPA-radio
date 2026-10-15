@@ -45,6 +45,7 @@ function putWithProgress(
 export function UploadForm() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">("public");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -75,6 +76,7 @@ export function UploadForm() {
           filename: entry.file.name,
           size: entry.file.size,
           rightsConfirmed: true,
+          visibility,
         }),
       });
       const presignData = (await presignRes.json().catch(() => null)) as
@@ -121,6 +123,22 @@ export function UploadForm() {
 
   return (
     <div className="flex flex-col gap-6">
+      <label className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dopa-800 bg-dopa-900 p-4 text-sm">
+        <span className="text-zinc-300">公開範囲</span>
+        <select
+          value={visibility}
+          onChange={(e) =>
+            setVisibility(e.target.value as "public" | "unlisted" | "private")
+          }
+          className="h-9 rounded-xl border border-dopa-700 bg-dopa-950 px-3 text-sm text-zinc-200 outline-none focus:border-accent"
+          aria-label="公開範囲"
+        >
+          <option value="public">公開（みんなに表示）</option>
+          <option value="unlisted">限定公開（リンクを知っている人だけ）</option>
+          <option value="private">非公開（自分のみ）</option>
+        </select>
+      </label>
+
       <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-dopa-800 bg-dopa-900 p-4">
         <input
           type="checkbox"

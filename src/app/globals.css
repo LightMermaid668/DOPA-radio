@@ -46,6 +46,10 @@ html {
 
 body {
   @apply bg-dopa-950 text-zinc-100 antialiased;
+  /* PWA（standalone + viewport-fit=cover）でステータスバー/ノッチに被らないようにする */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 ::selection {

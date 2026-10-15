@@ -4,6 +4,7 @@ import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 
 import { Logo } from "@/components/logo";
+import { ImportPlaylistButton } from "@/components/playlists/import-playlist-button";
 import { PublicPlayButton, type PublicTrack } from "@/components/playlists/public-play-button";
 import { db } from "@/db";
 import { playlistItems, playlists, tracks } from "@/db/schema";
@@ -160,12 +161,11 @@ export default async function PublicPlaylistPage({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <PublicPlayButton playlistId={playlist.id} tracks={playableTracks} />
-          <p className="text-xs text-zinc-500">
-            再生には会員登録が必要です
-          </p>
+          <ImportPlaylistButton playlistId={playlist.id} ownerId={playlist.ownerId} />
         </div>
+        <p className="text-xs text-zinc-500">再生には会員登録が必要です</p>
       </section>
 
       <ul className="flex flex-col gap-1 pb-16">

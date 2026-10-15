@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 
 import { db } from "@/db";
-import { tracks } from "@/db/schema";
+import { tracks, visibilityEnum } from "@/db/schema";
 import { presignPut } from "@/lib/s3";
 import { getSession } from "@/lib/session";
+
+type Visibility = (typeof visibilityEnum.enumValues)[number];
 
 const EXT_CONTENT_TYPES: Record<string, string> = {
   ".mp3": "audio/mpeg",
@@ -23,6 +25,7 @@ type PresignBody = {
   filename?: string;
   size?: number;
   rightsConfirmed?: boolean;
+  visibility?: string;
 };
 
 export async function POST(request: Request) {
@@ -58,12 +61,16 @@ export async function POST(request: Request) {
   const trackId = crypto.randomUUID();
   const originalKey = `original/${trackId}${ext}`;
 
+  const visibility = visibilityEnum.enumValues.includes(body.visibility as Visibility)
+    ? (body.visibility as Visibility)
+    : "public";
+
   await db.insert(tracks).values({
     id: trackId,
     ownerId: session.user.id,
     title,
     status: "processing",
-    visibility: "private",
+    visibility,
     rightsConfirmed: true,
     originalKey,
   });

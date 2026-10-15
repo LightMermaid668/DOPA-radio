@@ -133,8 +133,14 @@ export function PlayerBar() {
       />
       {track ? (
         <>
-          <div className="h-28" aria-hidden />
-          <div className="fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur">
+          <div
+            aria-hidden
+            style={{ height: "calc(7rem + env(safe-area-inset-bottom))" }}
+          />
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
             <div className="bg-rainbow h-0.5 w-full" aria-hidden />
             <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
           <div className="flex items-center gap-3">
