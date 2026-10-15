@@ -7,7 +7,7 @@ import { QrScannerButton } from "@/components/share/qr-scanner-button";
 
 export function AppHeader() {
   return (
-    <header className="flex items-center justify-between py-6">
+    <header className="app-header flex items-center justify-between py-6">
       <Link href="/home" aria-label="ホーム">
         <Logo />
       </Link>

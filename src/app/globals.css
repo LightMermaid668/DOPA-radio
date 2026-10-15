@@ -103,6 +103,42 @@ main {
   animation: page-enter 0.3s ease-out both;
 }
 
+/* View Transitions 対応ブラウザでは遷移アニメーションに任せる（二重に動かさない） */
+@supports (view-transition-name: none) {
+  main {
+    animation: none;
+  }
+}
+
+/* ---- ページ遷移（View Transitions API） ---- */
+
+/* ヘッダーとプレイヤーはページをまたいで固定表示（クロスフェードさせない） */
+.app-header {
+  view-transition-name: app-header;
+}
+
+::view-transition-old(root) {
+  animation: vt-out 0.18s ease-in both;
+}
+
+::view-transition-new(root) {
+  animation: vt-in 0.24s ease-out both;
+}
+
+@keyframes vt-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
 .animate-pop {
   animation: pop-in 0.16s ease-out both;
 }
@@ -135,5 +171,11 @@ button:active:not(:disabled) {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation: none !important;
   }
 }

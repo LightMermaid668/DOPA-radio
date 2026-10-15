@@ -139,7 +139,10 @@ export function PlayerBar() {
           />
           <div
             className="animate-slide-up fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
-            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            style={{
+              paddingBottom: "env(safe-area-inset-bottom)",
+              viewTransitionName: "player-bar",
+            }}
           >
             <div className="bg-rainbow h-0.5 w-full" aria-hidden />
             <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
