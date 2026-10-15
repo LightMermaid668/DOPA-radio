@@ -183,6 +183,8 @@ export const savedTracks = pgTable(
     trackId: uuid("track_id")
       .notNull()
       .references(() => tracks.id, { onDelete: "cascade" }),
+    // 保存した曲のピン留め（ユーザーごと。元の曲の pinned_at とは別）
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

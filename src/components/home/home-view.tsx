@@ -5,7 +5,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookmarkMinus, Compass, ListMusic, Music2, PinOff, Play } from "lucide-react";
+import { BookmarkMinus, Compass, ListMusic, Music2, Pin, PinOff, Play } from "lucide-react";
 
 import { DiscoverView } from "@/components/discover/discover-view";
 import { TrackList, type LibraryTrack } from "@/components/library/track-list";
@@ -15,7 +15,7 @@ import { ImportPlaylistForm } from "@/components/playlists/import-playlist-form"
 import { QrShareButton } from "@/components/share/qr-share-button";
 import type { DiscoverPlaylist, DiscoverTrack } from "@/lib/discover";
 import { cn } from "@/lib/utils";
-import { usePlayer } from "@/stores/player";
+import { usePlayer, type PlayerTrack } from "@/stores/player";
 
 export type HomePlaylist = {
   id: string;
@@ -34,6 +34,7 @@ export type SavedTrackView = {
   ownerName: string | null;
   chorusStartSec: number | null;
   chorusEndSec: number | null;
+  pinned: boolean;
 };
 
 const VISIBILITY_LABELS: Record<HomePlaylist["visibility"], string> = {
@@ -63,25 +64,68 @@ export function HomeView({
   const currentTrackId = usePlayer((s) => s.queue[s.index]?.id ?? null);
   const playerIsPlaying = usePlayer((s) => s.isPlaying);
 
-  const pinned = tracks.filter((track) => track.pinned && track.status === "ready");
+  const pinnedOwn = tracks.filter((track) => track.pinned && track.status === "ready");
+  const pinnedSaved = savedTracks.filter((track) => track.pinned && track.ready);
   const playableSaved = savedTracks.filter((track) => track.ready);
 
+  type PinnedCard = {
+    id: string;
+    title: string;
+    artist: string | null;
+    hasArtwork: boolean;
+    saved: boolean;
+  };
+
+  const pinnedCards: PinnedCard[] = [
+    ...pinnedOwn.map((track) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      hasArtwork: track.hasArtwork,
+      saved: false,
+    })),
+    ...pinnedSaved.map((track) => ({
+      id: track.trackId,
+      title: track.title,
+      artist: track.artist,
+      hasArtwork: track.hasArtwork,
+      saved: true,
+    })),
+  ];
+
+  const pinnedPlayerTracks = new Map<string, PlayerTrack>();
+  for (const track of pinnedOwn) {
+    pinnedPlayerTracks.set(track.id, {
+      id: track.id,
+      kind: "upload",
+      title: track.title,
+      artist: track.artist,
+      durationSec: track.durationSec,
+      artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
+      chorusStartSec: track.chorusStartSec,
+      chorusEndSec: track.chorusEndSec,
+    });
+  }
+  for (const track of pinnedSaved) {
+    pinnedPlayerTracks.set(track.trackId, {
+      id: track.trackId,
+      kind: "upload",
+      title: track.title,
+      artist: track.artist,
+      durationSec: track.durationSec,
+      artworkUrl: track.hasArtwork ? `/api/tracks/${track.trackId}/artwork` : null,
+      chorusStartSec: track.chorusStartSec,
+      chorusEndSec: track.chorusEndSec,
+    });
+  }
+
   function playPinned(id: string) {
-    const index = pinned.findIndex((track) => track.id === id);
+    const queue = pinnedCards
+      .map((card) => pinnedPlayerTracks.get(card.id))
+      .filter((track): track is PlayerTrack => Boolean(track));
+    const index = queue.findIndex((track) => track.id === id);
     if (index < 0) return;
-    usePlayer.getState().playQueue(
-      pinned.map((track) => ({
-        id: track.id,
-        kind: "upload" as const,
-        title: track.title,
-        artist: track.artist,
-        durationSec: track.durationSec,
-        artworkUrl: track.hasArtwork ? `/api/tracks/${track.id}/artwork` : null,
-        chorusStartSec: track.chorusStartSec,
-        chorusEndSec: track.chorusEndSec,
-      })),
-      index,
-    );
+    usePlayer.getState().playQueue(queue, index);
   }
 
   async function unpin(id: string) {
@@ -89,6 +133,24 @@ export function HomeView({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: false }),
+    });
+    router.refresh();
+  }
+
+  async function unpinSaved(trackId: string) {
+    await fetch(`/api/saved-tracks/${trackId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: false }),
+    });
+    router.refresh();
+  }
+
+  async function togglePinSaved(track: SavedTrackView) {
+    await fetch(`/api/saved-tracks/${track.trackId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: !track.pinned }),
     });
     router.refresh();
   }
@@ -120,24 +182,24 @@ export function HomeView({
     <div className="flex flex-col gap-6 pb-8">
       <section>
         <h2 className="mb-2 text-sm font-bold text-zinc-300">ピン留め</h2>
-        {pinned.length === 0 ? (
+        {pinnedCards.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-dopa-700 bg-dopa-900/60 px-4 py-4 text-xs text-zinc-500">
             ライブラリのピンボタンで曲をここに固定できます
           </p>
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-2">
-            {pinned.map((track) => (
-              <div key={track.id} className="relative w-28 shrink-0">
+            {pinnedCards.map((card) => (
+              <div key={card.id} className="relative w-28 shrink-0">
                 <button
                   type="button"
-                  onClick={() => playPinned(track.id)}
+                  onClick={() => playPinned(card.id)}
                   className="w-full text-left"
-                  aria-label={`${track.title} を再生`}
+                  aria-label={`${card.title} を再生`}
                 >
                   <div className="relative flex aspect-square w-28 items-center justify-center overflow-hidden rounded-xl bg-dopa-800">
-                    {track.hasArtwork ? (
+                    {card.hasArtwork ? (
                       <img
-                        src={`/api/tracks/${track.id}/artwork`}
+                        src={`/api/tracks/${card.id}/artwork`}
                         alt=""
                         className="size-full object-cover"
                         loading="lazy"
@@ -145,7 +207,7 @@ export function HomeView({
                     ) : (
                       <Music2 className="size-5 text-zinc-500" />
                     )}
-                    {currentTrackId === track.id ? (
+                    {currentTrackId === card.id ? (
                       <span className="absolute inset-0 flex items-center justify-center bg-black/60">
                         <NowPlayingIndicator playing={playerIsPlaying} />
                       </span>
@@ -155,14 +217,14 @@ export function HomeView({
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 truncate text-xs font-semibold">{track.title}</p>
+                  <p className="mt-1 truncate text-xs font-semibold">{card.title}</p>
                   <p className="truncate text-[10px] text-zinc-500">
-                    {track.artist ?? "アーティスト不明"}
+                    {card.artist ?? "アーティスト不明"}
                   </p>
                 </button>
                 <button
                   type="button"
-                  onClick={() => unpin(track.id)}
+                  onClick={() => void (card.saved ? unpinSaved(card.id) : unpin(card.id))}
                   className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-dopa-950/80 text-zinc-300 hover:text-accent"
                   aria-label="ピン留めを解除"
                 >
@@ -262,6 +324,17 @@ export function HomeView({
                         {track.ownerName ? ` ・ ${track.ownerName}さん` : ""}
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => void togglePinSaved(track)}
+                      className={cn(
+                        "flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-dopa-800",
+                        track.pinned ? "text-accent" : "text-zinc-400 hover:text-accent",
+                      )}
+                      aria-label={track.pinned ? "ピン留めを解除" : "ピン留めする"}
+                    >
+                      <Pin className="size-3.5" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => unsave(track.trackId)}

@@ -103,6 +103,8 @@ type LibraryTrackOption = {
   title: string;
   artist: string | null;
   status: string;
+  ownerName?: string | null;
+  own?: boolean;
 };
 
 type ExternalSearchResult = {
@@ -141,7 +143,7 @@ export function PlaylistDetail({
   useEffect(() => {
     if (!addOpen || addMode !== "library" || options !== null) return;
     void (async () => {
-      const res = await fetch("/api/tracks");
+      const res = await fetch("/api/tracks?include=saved");
       const body = (await res.json().catch(() => null)) as {
         tracks?: LibraryTrackOption[];
       } | null;
@@ -496,8 +498,9 @@ export function PlaylistDetail({
                           className="size-4 accent-fuchsia-500"
                         />
                         <span className="min-w-0 flex-1 truncate text-sm">{option.title}</span>
-                        <span className="shrink-0 text-xs text-zinc-500">
+                        <span className="max-w-40 shrink-0 truncate text-xs text-zinc-500">
                           {option.artist ?? ""}
+                          {option.ownerName ? ` ・ ${option.ownerName}さん` : ""}
                         </span>
                       </label>
                     </li>

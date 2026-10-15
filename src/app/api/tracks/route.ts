@@ -2,16 +2,19 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
-import { tracks, visibilityEnum } from "@/db/schema";
+import { user as userTable } from "@/db/auth-schema";
+import { savedTracks, tracks, visibilityEnum } from "@/db/schema";
 import { getSession } from "@/lib/session";
 
 type Visibility = (typeof visibilityEnum.enumValues)[number];
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
   }
+
+  const includeSaved = new URL(request.url).searchParams.get("include") === "saved";
 
   const rows = await db
     .select({
@@ -30,7 +33,36 @@ export async function GET() {
     .where(eq(tracks.ownerId, session.user.id))
     .orderBy(desc(tracks.createdAt));
 
-  return NextResponse.json({ tracks: rows });
+  if (!includeSaved) {
+    return NextResponse.json({ tracks: rows.map((row) => ({ ...row, own: true, ownerName: null })) });
+  }
+
+  const savedRows = await db
+    .select({
+      id: tracks.id,
+      title: tracks.title,
+      artist: tracks.artist,
+      album: tracks.album,
+      genre: tracks.genre,
+      durationSec: tracks.durationSec,
+      status: tracks.status,
+      visibility: tracks.visibility,
+      playCount: tracks.playCount,
+      createdAt: savedTracks.createdAt,
+      ownerName: userTable.name,
+    })
+    .from(savedTracks)
+    .innerJoin(tracks, eq(savedTracks.trackId, tracks.id))
+    .leftJoin(userTable, eq(tracks.ownerId, userTable.id))
+    .where(eq(savedTracks.userId, session.user.id))
+    .orderBy(desc(savedTracks.createdAt));
+
+  return NextResponse.json({
+    tracks: [
+      ...rows.map((row) => ({ ...row, own: true, ownerName: null })),
+      ...savedRows.map((row) => ({ ...row, own: false, ownerName: row.ownerName ?? null })),
+    ],
+  });
 }
 
 type BulkPatchBody = {

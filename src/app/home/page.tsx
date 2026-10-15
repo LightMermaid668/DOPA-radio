@@ -92,6 +92,7 @@ export default async function HomePage() {
       ownerName: userTable.name,
       chorusStartSec: tracks.chorusStartSec,
       chorusEndSec: tracks.chorusEndSec,
+      pinnedAt: savedTracks.pinnedAt,
     })
     .from(savedTracks)
     .innerJoin(tracks, eq(savedTracks.trackId, tracks.id))
@@ -109,6 +110,7 @@ export default async function HomePage() {
     ownerName: row.ownerName,
     chorusStartSec: row.chorusStartSec,
     chorusEndSec: row.chorusEndSec,
+    pinned: Boolean(row.pinnedAt),
   }));
 
   const discover = await getDiscoverData(user);

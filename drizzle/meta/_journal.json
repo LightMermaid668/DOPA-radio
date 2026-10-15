@@ -43,6 +43,13 @@
       "when": 1792073041134,
       "tag": "0005_fearless_carlie_cooper",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792102067163,
+      "tag": "0006_regular_steve_rogers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { playlistItems, playlists, tracks } from "@/db/schema";
+import { playlistItems, playlists, savedTracks, tracks } from "@/db/schema";
 import { lookupAppleTrack } from "@/lib/apple";
 import { getSession } from "@/lib/session";
 import { getSpotifyAccessToken, lookupSpotifyTrack } from "@/lib/spotify";
@@ -59,19 +59,24 @@ export async function POST(
   const newItems: NewItem[] = [];
 
   if (trackIds.length > 0) {
-    const ownedTracks = await db
+    // 自分の曲に加えて、保存した曲（他人の公開曲）も追加できる
+    const savedTrackIds = db
+      .select({ trackId: savedTracks.trackId })
+      .from(savedTracks)
+      .where(eq(savedTracks.userId, session.user.id));
+    const addableTracks = await db
       .select({ id: tracks.id })
       .from(tracks)
       .where(
         and(
-          eq(tracks.ownerId, session.user.id),
           eq(tracks.status, "ready"),
           inArray(tracks.id, trackIds),
+          or(eq(tracks.ownerId, session.user.id), inArray(tracks.id, savedTrackIds)),
         ),
       );
-    const ownedIds = new Set(ownedTracks.map((row) => row.id));
+    const addableIds = new Set(addableTracks.map((row) => row.id));
     for (const trackId of trackIds) {
-      if (!ownedIds.has(trackId)) continue;
+      if (!addableIds.has(trackId)) continue;
       newItems.push({ kind: "upload", trackId, externalId: null, externalMeta: null });
     }
   }
