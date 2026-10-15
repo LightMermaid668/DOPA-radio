@@ -198,6 +198,7 @@ cd /opt/dopa-radio && git log --oneline -1
 | 502 + ログに `lookup caddy ... no such host` | ホスト側 cloudflared サービスとの二重接続。`systemctl disable --now cloudflared`（Compose 内の cloudflared だけにする） |
 | `Provided Tunnel token is not valid` | `.env` の `CLOUDFLARE_TUNNEL_TOKEN` に、ダッシュボードの **`--token` の後ろの文字列のみ**（`eyJ`で始まる）を設定。`--token` や引用符・空白を含めない |
 | アップロード時に `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` | メディア用ホストが2階層サブドメイン（Universal SSL対象外）。1階層（`dopa-media.sosukeiwasaki.f5.si`）に変更し、TunnelのPublic Hostnameと `.env` の `MEDIA_DOMAIN` / `S3_PUBLIC_ENDPOINT` を合わせる |
+| アップロードのプリフライト(OPTIONS)が404 / CORSエラー | ①`.env` の `MEDIA_DOMAIN` が `dopa-media.sosukeiwasaki.f5.si` か確認 ②TunnelのPublic HostnameのServiceが `http://caddy:80` か確認 ③最新をデプロイ（Caddyfileは `deploy/caddy/` をディレクトリマウント。デプロイ時に自動でcaddy再作成） |
 | ログインで `redirect_uri_mismatch` | Google Console のリダイレクト URI を確認 |
 | 登録できない | `docker compose logs postgres web`（マイグレーション成功しているか） |
 | 1033 Tunnel error | `cloudflared` トークン・トンネル起動状態を確認 |

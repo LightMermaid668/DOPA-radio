@@ -67,7 +67,7 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:-dopa-radio.sosukeiwasaki.f5.si}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN:-dopa-media.sosukeiwasaki.f5.si}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/caddy:/etc/caddy:ro
       - caddydata:/data
       - caddyconfig:/config
     depends_on:

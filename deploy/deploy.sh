@@ -56,4 +56,14 @@ echo "[deploy] docker compose を再ビルドして起動します..."
 docker compose up -d --build --remove-orphans
 docker image prune -f >/dev/null 2>&1 || true
 
+# Caddyfile が変わっていたら caddy を再作成（bind mount の取りこぼし防止）
+if command -v sha256sum >/dev/null 2>&1; then
+  CADDY_SHA="$(sha256sum deploy/caddy/Caddyfile | cut -d' ' -f1)"
+  if [ ! -f .caddyfile.sha ] || [ "$(cat .caddyfile.sha 2>/dev/null)" != "$CADDY_SHA" ]; then
+    echo "[deploy] Caddyfile の変更を検知。caddy を再作成します"
+    docker compose up -d --force-recreate caddy
+    printf '%s' "$CADDY_SHA" >.caddyfile.sha
+  fi
+fi
+
 echo "[deploy] 完了: $(git rev-parse HEAD)"

@@ -23,6 +23,9 @@ next-env.d.ts
 # garage (deploy.sh が生成する実設定ファイル)
 /garage.toml
 
+# deploy 状態ファイル
+/.caddyfile.sha
+
 # typescript
 *.tsbuildinfo
 
