@@ -16,6 +16,7 @@ import {
   Pencil,
   Pin,
   Play,
+  Radio,
   Trash2,
   UploadCloud,
   X,
@@ -158,6 +159,48 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     setEditingId(track.id);
     setEditTitle(track.title);
     setEditArtist(track.artist ?? "");
+  }
+
+  async function addSimilar(track: LibraryTrack) {
+    try {
+      const queueIds = usePlayer.getState().queue.map((item) => item.id);
+      const params = new URLSearchParams({ seed: track.id });
+      if (queueIds.length > 0) {
+        params.set("exclude", queueIds.slice(-50).join(","));
+      }
+      const res = await fetch(`/api/radio/next?${params.toString()}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        tracks?: Array<{
+          id: string;
+          title: string;
+          artist: string | null;
+          durationSec: number | null;
+          hasArtwork: boolean;
+        }>;
+      };
+      const similar = body.tracks ?? [];
+      if (similar.length === 0) return;
+
+      const toPlayerTrack = (item: (typeof similar)[number]) => ({
+        id: item.id,
+        kind: "upload" as const,
+        title: item.title,
+        artist: item.artist,
+        durationSec: item.durationSec,
+        artworkUrl: item.hasArtwork ? `/api/tracks/${item.id}/artwork` : null,
+      });
+
+      if (usePlayer.getState().queue.length === 0) {
+        usePlayer.getState().playQueue(similar.map(toPlayerTrack), 0);
+        return;
+      }
+      for (const item of similar) {
+        usePlayer.getState().queueAdd(toPlayerTrack(item));
+      }
+    } catch {
+      /* 失敗時は何もしない */
+    }
   }
 
   async function saveEdit(id: string) {
@@ -472,6 +515,19 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                 >
                   <Pencil className="size-3.5" />
                   編集
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const track = menu.track;
+                    setMenu(null);
+                    void addSimilar(track);
+                  }}
+                  disabled={menu.track.status !== "ready"}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800 disabled:opacity-40"
+                >
+                  <Radio className="size-3.5" />
+                  似てる曲を追加（ドパモード）
                 </button>
 
                 <div className="my-1 h-px bg-dopa-800" />
