@@ -109,6 +109,12 @@ chmod 600 .env
 
 （云flare が CNAME レコードを自動作成します。`http://caddy:80` は Compose 内のサービス名で解決されます）
 
+> **重要**: LXC 本体に cloudflared を systemd サービスとしてインストールしないでください
+> （ダッシュボードの「Debian」タブの手順は使わない）。このプロジェクトは Compose 内の
+> cloudflared を使うため、ホスト側にも入れると**二重接続**になり、ホスト側が docker の
+> 内部名 `caddy` を解決できず 502 の原因になります。
+> 入ってしまった場合: `systemctl disable --now cloudflared`
+
 ## 6. 起動
 
 `.env` 設定後、以下のどちらか:
@@ -185,6 +191,7 @@ cd /opt/dopa-radio && git log --oneline -1
 | 症状 | 確認 |
 |---|---|
 | 502 Bad Gateway | `docker compose ps` と `docker compose logs cloudflared`（トークン・宛先 `http://caddy:80` の設定） |
+| 502 + ログに `lookup caddy ... no such host` | ホスト側 cloudflared サービスとの二重接続。`systemctl disable --now cloudflared`（Compose 内の cloudflared だけにする） |
 | `Provided Tunnel token is not valid` | `.env` の `CLOUDFLARE_TUNNEL_TOKEN` に、ダッシュボードの **`--token` の後ろの文字列のみ**（`eyJ`で始まる）を設定。`--token` や引用符・空白を含めない |
 | ログインで `redirect_uri_mismatch` | Google Console のリダイレクト URI を確認 |
 | 登録できない | `docker compose logs postgres web`（マイグレーション成功しているか） |
