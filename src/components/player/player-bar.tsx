@@ -6,7 +6,6 @@ import {
   Gauge,
   ListMusic,
   Loader2,
-  Mic,
   Pause,
   Play,
   Radio,
@@ -23,20 +22,12 @@ import {
   applyPlaybackSettings,
   fadeAudioVolume,
   getAudio,
-  isIos,
   maxPlaybackRate,
   resetAudioVolume,
 } from "@/lib/player-audio";
-import {
-  disableMicAnalyser,
-  enableMicAnalyser,
-  ensureCaptureAnalyser,
-  eqGraphReady,
-  getSpectrumData,
-  micAnalyserEnabled,
-} from "@/lib/eq";
+import { loadSpectrogram, type Spectrogram } from "@/lib/spectrogram";
 import { cn } from "@/lib/utils";
-import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
+import { handleAudioError, usePlayer, type EqBand, type PlayerTrack } from "@/stores/player";
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
 const PITCH_OPTIONS = Array.from({ length: 25 }, (_, index) => index - 12);
@@ -58,6 +49,29 @@ function formatTime(sec: number): string {
 function formatBoostDb(level: number): string {
   if (level <= 1.001) return "±0dB";
   return `+${(20 * Math.log10(level)).toFixed(1)}dB`;
+}
+
+/**
+ * スペクトル解析の対象（音声ファイルのURL）を決める。
+ * マイクは使わず、再生している音源そのものをデコードして解析する。
+ */
+function analysisTarget(
+  track: PlayerTrack,
+  semitones: number,
+): { key: string; url: string } | null {
+  if (track.kind === "upload") {
+    if (semitones !== 0) {
+      return {
+        key: `pitch:${track.id}:${semitones}`,
+        url: `/api/tracks/${track.id}/pitch/${semitones}`,
+      };
+    }
+    return { key: `track:${track.id}`, url: `/api/tracks/${track.id}/file` };
+  }
+  if (track.kind === "apple" && track.previewUrl) {
+    return { key: `apple:${track.id}`, url: track.previewUrl };
+  }
+  return null;
 }
 
 export function PlayerBar() {
@@ -122,44 +136,39 @@ export function PlayerBar() {
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [panel]);
 
-  // iPhone(Safari)は要素からの実解析が取れないため、マイク解析を提案
-  // （参考サイト soundmeterx と同じマイクFFT方式。スピーカーから出た音を拾います）
-  const [micStatus, setMicStatus] = useState<"none" | "offer" | "on">("none");
+  // スペクトラム解析: 音声ファイルをローカルでデコードして事前にFFTを計算し、
+  // 再生位置に同期して表示する（参考サイトの「音声ファイル」解析と同じ方式）。
+  // マイクは使用しないため、バックグラウンド再生にも影響しない。
+  const spectrogramRef = useRef<Spectrogram | null>(null);
+  const spectroStatusRef = useRef<"idle" | "loading" | "ready" | "unavailable">("idle");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const evaluate = () => {
-      if (!isIos()) {
-        setMicStatus("none");
-        return;
-      }
-      if (micAnalyserEnabled()) {
-        setMicStatus("on");
-        return;
-      }
-      const { isPlaying } = usePlayer.getState();
-      setMicStatus(isPlaying && !eqGraphReady() ? "offer" : "none");
-    };
-    evaluate();
-    const timer = window.setInterval(evaluate, 2500);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  async function handleMicToggle() {
-    if (micStatus === "on") {
-      disableMicAnalyser();
-      setMicStatus("offer");
+    if (!track) return;
+    const target = analysisTarget(track, pitchSemitones);
+    spectrogramRef.current = null;
+    if (!target) {
+      spectroStatusRef.current = "unavailable";
       return;
     }
-    const ok = await enableMicAnalyser();
-    if (ok) {
-      setMicStatus("on");
-    } else {
-      usePlayer.setState({
-        playbackNotice: "マイクを利用できませんでした（ブラウザの許可が必要です）",
-      });
-    }
-  }
+    spectroStatusRef.current = "loading";
+    let cancelled = false;
+    void loadSpectrogram(target.key, target.url).then((spectrogram) => {
+      if (cancelled) return;
+      spectrogramRef.current = spectrogram;
+      spectroStatusRef.current = spectrogram ? "ready" : "unavailable";
+      // 次の曲を先読みしておく
+      const state = usePlayer.getState();
+      const nextTrack = state.queue[state.index + 1];
+      if (nextTrack) {
+        const nextTarget = analysisTarget(nextTrack, state.pitchSemitones);
+        if (nextTarget) void loadSpectrogram(nextTarget.key, nextTarget.url);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [track, pitchSemitones]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -243,8 +252,8 @@ export function PlayerBar() {
     };
   }, []);
 
-  // リアル・スペクトラムアナライザー（ミラー型カーブ）
-  // 実際の周波数スペクトル（FFT）を描画し、無音時は中央の一直線になる。
+  // リアル・スペクトラムアナライザー（バー型 + ピークホールド）
+  // 事前解析したスペクトルを再生位置に同期して描画する。
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!track) return;
@@ -254,7 +263,6 @@ export function PlayerBar() {
     const MAX_COLUMNS = 96;
     const levels = new Float32Array(MAX_COLUMNS);
     const peaks = new Float32Array(MAX_COLUMNS);
-    const spectrum = new Uint8Array(512);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = canvas.getContext("2d");
     let raf = 0;
@@ -268,7 +276,7 @@ export function PlayerBar() {
     resize();
     window.addEventListener("resize", resize);
 
-    const drawFrame = (time: number, speed: number, playing: boolean) => {
+    const drawFrame = (currentTime: number, speed: number) => {
       if (!context) return;
       const width = canvas.width;
       const height = canvas.height;
@@ -278,45 +286,46 @@ export function PlayerBar() {
       const columns = Math.max(40, Math.min(MAX_COLUMNS, Math.floor(width / 4)));
       const barWidth = width / columns;
       const gap = Math.max(1, barWidth * 0.28);
-      const hasReal = playing ? getSpectrumData(spectrum) : false;
-      const maxBin = Math.max(1, Math.floor(spectrum.length * 0.66));
+      const spectrogram = spectrogramRef.current;
 
-      for (let i = 0; i < columns; i++) {
-        const norm = i / (columns - 1);
-        let target = 0;
-
-        if (playing) {
-          if (hasReal) {
-            // 対数スケールで低域〜高域を割り当て、近傍3ビンを平均
-            const bin = Math.max(
-              1,
-              Math.min(maxBin, Math.floor(Math.pow(norm, 1.6) * maxBin)),
-            );
-            const lo = Math.max(0, bin - 1);
-            const hi = Math.min(spectrum.length - 1, bin + 1);
-            let sum = 0;
-            for (let b = lo; b <= hi; b++) sum += spectrum[b];
-            target = ((sum / (hi - lo + 1)) / 255) * (1.3 - norm * 0.4);
+      if (spectrogram) {
+        // 再生位置に対応する解析フレームを表示（一時停止中はその場で静止）
+        const frameIndex = Math.max(
+          0,
+          Math.min(spectrogram.frames - 1, Math.round(currentTime / spectrogram.hopSec)),
+        );
+        const base = frameIndex * spectrogram.bands;
+        for (let i = 0; i < columns; i++) {
+          const norm = i / (columns - 1);
+          const band = Math.min(
+            spectrogram.bands - 1,
+            Math.round(norm * (spectrogram.bands - 1)),
+          );
+          const value = spectrogram.data[base + band] / 255;
+          const target = Math.max(0, Math.min(1, value * (1.25 - norm * 0.35)));
+          // 速いアタック・緩いリリース
+          levels[i] += (target - levels[i]) * (target > levels[i] ? 0.6 : 0.35);
+          // ピークホールド（ゆっくり落ちる白いキャップ）
+          if (levels[i] >= peaks[i]) {
+            peaks[i] = levels[i];
           } else {
-            // 実データを取得できない環境（iOSでサウンド設定/マイク解析OFF時など）の簡易表示
-            const beat = Math.max(0, Math.sin(time * speed * Math.PI * 2 * 2.0));
-            const ripple =
-              0.5 + 0.5 * Math.sin(norm * Math.PI * 6 + time * speed * 3.2);
-            target =
-              (0.16 + 0.6 * Math.pow(beat, 3)) *
-              (0.4 + 0.6 * ripple) *
-              (1 - norm * 0.6);
+            peaks[i] = Math.max(levels[i], peaks[i] - 0.012 * (1 + speed * 0.5));
           }
         }
-
-        target = Math.max(0, Math.min(1, target));
-        // 速いアタック・緩いリリース
-        levels[i] += (target - levels[i]) * (target > levels[i] ? 0.55 : 0.1);
-        // ピークホールド（ゆっくり落ちる白いキャップ）
-        if (levels[i] >= peaks[i]) {
-          peaks[i] = levels[i];
-        } else {
-          peaks[i] = Math.max(levels[i], peaks[i] - 0.012 * (1 + speed * 0.5));
+      } else {
+        // 解析データが無い/準備中はなだらかに消す
+        for (let i = 0; i < columns; i++) {
+          levels[i] += (0 - levels[i]) * 0.12;
+          if (levels[i] >= peaks[i]) {
+            peaks[i] = levels[i];
+          } else {
+            peaks[i] = Math.max(levels[i], peaks[i] - 0.02);
+          }
+        }
+        if (spectroStatusRef.current === "loading" && currentTime > 0) {
+          context.fillStyle = "rgba(255, 255, 255, 0.3)";
+          context.font = `${Math.max(8, Math.round(height * 0.38))}px -apple-system, sans-serif`;
+          context.fillText("解析中…", 8, Math.round(height * 0.68));
         }
       }
 
@@ -351,30 +360,14 @@ export function PlayerBar() {
     };
 
     if (reduced) {
-      drawFrame(0, 1, false);
+      drawFrame(0, 1);
       return () => window.removeEventListener("resize", resize);
     }
 
-    let captureReady = false;
-    let frame = 0;
-
     const loop = () => {
-      const { isPlaying, rate } = usePlayer.getState();
-      frame++;
-
-      // captureStream による実解析を試行（EQグラフが無い場合）
-      if (
-        !captureReady &&
-        isPlaying &&
-        !eqGraphReady() &&
-        (frame === 1 || frame % 120 === 0)
-      ) {
-        const audio = getAudio();
-        if (audio) captureReady = ensureCaptureAnalyser(audio);
-      }
-
-      const time = performance.now() / 1000;
-      drawFrame(time, rate || 1, isPlaying);
+      const { rate } = usePlayer.getState();
+      const audio = getAudio();
+      drawFrame(audio?.currentTime ?? 0, rate || 1);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -440,24 +433,7 @@ export function PlayerBar() {
           viewTransitionName: "player-bar",
         }}
       >
-        <div className="relative">
-          <canvas ref={canvasRef} className="h-6 w-full" aria-hidden />
-          {micStatus !== "none" ? (
-            <button
-              type="button"
-              onClick={handleMicToggle}
-              className="absolute left-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full border border-dopa-700 bg-dopa-950/85 px-2 py-[3px] text-[9px] font-semibold text-zinc-200 hover:bg-dopa-800"
-            >
-              <Mic
-                className={cn(
-                  "size-3",
-                  micStatus === "on" ? "text-accent" : "text-zinc-400",
-                )}
-              />
-              {micStatus === "offer" ? "実音解析（マイク）" : "マイク解析中"}
-            </button>
-          ) : null}
-        </div>
+        <canvas ref={canvasRef} className="h-6 w-full" aria-hidden />
         <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
           <div className="flex items-center gap-2">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">

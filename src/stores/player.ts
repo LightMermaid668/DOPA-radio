@@ -712,11 +712,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const audio = getAudio();
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
-      const needsGraph = eqEnabled || boostLevel > MIN_BOOST || !isIos();
+      const needsGraph = eqEnabled || boostLevel > MIN_BOOST;
       if (needsGraph && typeof document !== "undefined") {
         // グラフ生成は必ずユーザー操作内で行う（自動再生ポリシーで
         // サスペンド状態のAudioContextに接続され無音になるのを防ぐ）。
-        // 非iOSではスペクトラム表示のため、フラット設定でも常にグラフを用意する
         const arm = () => {
           const target = getAudio();
           if (target) activateSoundGraph(target);
