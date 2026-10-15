@@ -16,28 +16,9 @@ import {
   putObjectBuffer,
   putObjectFile,
 } from "../../src/lib/s3";
+import { ffprobe } from "../lib/ffprobe";
 
 const execFileAsync = promisify(execFile);
-
-type FfprobeResult = {
-  format?: { duration?: string };
-  streams?: Array<{ codec_type?: string; codec_name?: string }>;
-};
-
-async function ffprobe(filePath: string): Promise<FfprobeResult> {
-  const { stdout } = await execFileAsync("ffprobe", [
-    "-v",
-    "error",
-    "-show_entries",
-    "format=duration",
-    "-show_entries",
-    "stream=codec_type,codec_name",
-    "-of",
-    "json",
-    filePath,
-  ]);
-  return JSON.parse(stdout) as FfprobeResult;
-}
 
 export async function transcodeTrack(trackId: string): Promise<void> {
   const track = await db.query.tracks.findFirst({ where: eq(tracks.id, trackId) });

@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/stores/player";
 
@@ -53,6 +53,9 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkVisibility, setBulkVisibility] = useState<LibraryTrack["visibility"]>("private");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const processing = tracks.some((track) => track.status === "processing");
   useEffect(() => {
@@ -114,6 +117,38 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     setEditingId(null);
   }
 
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelected(new Set(tracks.map((track) => track.id)));
+  }
+
+  async function applyBulk() {
+    if (selected.size === 0) return;
+    setBulkBusy(true);
+    try {
+      await fetch("/api/tracks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selected], visibility: bulkVisibility }),
+      });
+      setSelected(new Set());
+      router.refresh();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   if (tracks.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-dopa-700 bg-dopa-900/60 px-6 py-16 text-center">
@@ -130,8 +165,54 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   }
 
   return (
-    <ul className="flex flex-col gap-2 pb-8">
-      {tracks.map((track) => {
+    <div className="pb-8">
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dopa-800 bg-dopa-900/60 px-3 py-2 text-xs">
+        {selected.size > 0 ? (
+          <>
+            <span className="font-semibold text-accent">{selected.size}件</span>
+            <span className="text-zinc-400">の公開範囲を</span>
+            <select
+              value={bulkVisibility}
+              onChange={(e) => setBulkVisibility(e.target.value as LibraryTrack["visibility"])}
+              className="h-7 rounded-lg border border-dopa-700 bg-dopa-950 px-1.5 text-[11px] text-zinc-300 outline-none focus:border-accent"
+              aria-label="一括公開範囲"
+            >
+              {(Object.keys(VISIBILITY_LABELS) as Array<keyof typeof VISIBILITY_LABELS>).map(
+                (key) => (
+                  <option key={key} value={key}>
+                    {VISIBILITY_LABELS[key]}
+                  </option>
+                ),
+              )}
+            </select>
+            <span className="text-zinc-400">に変更</span>
+            <Button type="button" size="sm" onClick={applyBulk} disabled={bulkBusy}>
+              {bulkBusy ? "適用中…" : "適用"}
+            </Button>
+            <button
+              type="button"
+              onClick={selectAll}
+              className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
+            >
+              すべて選択
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
+            >
+              選択解除
+            </button>
+          </>
+        ) : (
+          <span className="text-zinc-500">
+            チェックを付けると公開範囲をまとめて変更できます
+          </span>
+        )}
+      </div>
+
+      <ul className="flex flex-col gap-2">
+        {tracks.map((track) => {
         const ready = track.status === "ready";
         const failed = track.status === "failed";
         return (
@@ -140,6 +221,13 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
             className="rounded-2xl border border-dopa-800 bg-dopa-900 px-4 py-3"
           >
             <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={selected.has(track.id)}
+                onChange={() => toggleSelected(track.id)}
+                className="size-4 shrink-0 accent-amber-500"
+                aria-label={`${track.title} を選択`}
+              />
               <button
                 type="button"
                 onClick={() => playFrom(track.id)}
@@ -275,7 +363,8 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
             ) : null}
           </li>
         );
-      })}
-    </ul>
+        })}
+      </ul>
+    </div>
   );
 }

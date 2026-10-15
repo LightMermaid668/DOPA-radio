@@ -15,6 +15,13 @@
       "when": 1792058292739,
       "tag": "0001_salty_cammi",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792062766859,
+      "tag": "0002_hesitant_white_queen",
+      "breakpoints": true
     }
   ]
 }

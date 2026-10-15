@@ -61,6 +61,12 @@ export default async function LibraryPage() {
         </span>
         <div className="flex items-center gap-4">
           <span className="hidden text-xs text-zinc-400 sm:inline">{user.name}</span>
+          <Link
+            href="/playlists"
+            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+          >
+            プレイリスト
+          </Link>
           <Link href="/upload" className={cn(buttonVariants({ size: "sm" }))}>
             アップロード
           </Link>

@@ -116,6 +116,7 @@ export async function DELETE(
     if (track.audioKey) await deleteObject(track.audioKey);
     if (track.artworkKey) await deleteObject(track.artworkKey);
     await deletePrefix(`hls/${track.id}/`);
+    await deletePrefix(`pitch/${track.id}/`);
   } catch (error) {
     console.warn(`[tracks] storage cleanup failed (${track.id}):`, error);
   }

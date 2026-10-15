@@ -22,6 +22,11 @@ import { user } from "./auth-schema";
 export const visibilityEnum = pgEnum("visibility", ["private", "unlisted", "public"]);
 export const trackStatusEnum = pgEnum("track_status", ["processing", "ready", "failed"]);
 export const playlistItemKindEnum = pgEnum("playlist_item_kind", ["upload", "apple", "spotify"]);
+export const pitchVariantStatusEnum = pgEnum("pitch_variant_status", [
+  "processing",
+  "ready",
+  "failed",
+]);
 
 export const tracks = pgTable(
   "tracks",
@@ -95,6 +100,22 @@ export const playlistItems = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("playlist_items_playlist_idx").on(t.playlistId, t.position)],
+);
+
+export const trackPitchVariants = pgTable(
+  "track_pitch_variants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    semitones: integer("semitones").notNull(),
+    status: pitchVariantStatusEnum("status").notNull().default("processing"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("track_pitch_variants_unique").on(t.trackId, t.semitones)],
 );
 
 export const integrations = pgTable(

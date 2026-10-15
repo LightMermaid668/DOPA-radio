@@ -9,6 +9,7 @@ import {
 
 const RATE_KEY = "dopa:playback-rate";
 const PITCH_KEY = "dopa:preserves-pitch";
+const PITCH_SEMITONES_KEY = "dopa:pitch-semitones";
 
 export type PlayerTrack = {
   id: string;
@@ -26,7 +27,9 @@ type PlayerState = {
   duration: number;
   rate: number;
   preservesPitch: boolean;
+  pitchSemitones: number;
   playbackError: string | null;
+  playbackNotice: string | null;
   playQueue: (tracks: PlayerTrack[], index?: number) => void;
   togglePlay: () => void;
   next: () => void;
@@ -34,11 +37,16 @@ type PlayerState = {
   seekTo: (sec: number) => void;
   setRate: (rate: number) => void;
   setPreservesPitch: (value: boolean) => void;
+  setPitchSemitones: (value: number) => void;
   hydrateSettings: () => void;
   retryCurrent: () => void;
 };
 
 let fallbackTrackId: string | null = null;
+
+function formatSemitones(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
 
 function reportPlayError(error: unknown) {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -61,20 +69,108 @@ function playWithRetry(audio: HTMLAudioElement, attempt: number) {
   });
 }
 
-function startTrack(track: PlayerTrack, rate: number, preservesPitch: boolean) {
+async function ensurePitchVariant(trackId: string, semitones: number): Promise<boolean> {
+  for (let i = 0; i < 40; i++) {
+    try {
+      const res = await fetch(`/api/tracks/${trackId}/pitch/${semitones}?check=1`);
+      if (res.ok) {
+        const data = (await res.json()) as { status?: string };
+        if (data.status === "ready") return true;
+        if (data.status !== "processing") return false;
+      } else {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    usePlayer.setState({
+      playbackNotice: `${formatSemitones(semitones)}半音の音源を生成しています…（初回のみ・数秒）`,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return false;
+}
+
+function startTrackWithPitch(
+  track: PlayerTrack,
+  rate: number,
+  preservesPitch: boolean,
+  semitones: number,
+  position: number,
+  play: boolean,
+) {
+  void (async () => {
+    const audio = getAudio();
+    if (!audio) return;
+    fallbackTrackId = null;
+    usePlayer.setState({
+      playbackError: null,
+      playbackNotice: `${formatSemitones(semitones)}半音の音源を準備しています…`,
+    });
+
+    const ready = await ensurePitchVariant(track.id, semitones);
+    if (!ready) {
+      usePlayer.setState({
+        playbackNotice: null,
+        playbackError: "ピッチ音源の生成に失敗しました",
+      });
+      return;
+    }
+
+    usePlayer.setState({ playbackNotice: null });
+    audio.src = `/api/tracks/${track.id}/pitch/${semitones}`;
+    audio.load();
+    applyPlaybackSettings(audio, { rate, preservesPitch });
+    if (position > 0) {
+      const restore = () => {
+        audio.removeEventListener("loadedmetadata", restore);
+        audio.currentTime = position;
+      };
+      audio.addEventListener("loadedmetadata", restore);
+    }
+    if (play) {
+      playWithRetry(audio, 0);
+    }
+  })();
+}
+
+function startTrack(
+  track: PlayerTrack,
+  rate: number,
+  preservesPitch: boolean,
+  semitones: number,
+  opts?: { position?: number; play?: boolean },
+) {
+  const play = opts?.play ?? true;
+  const position = opts?.position ?? 0;
+
+  if (semitones !== 0) {
+    startTrackWithPitch(track, rate, preservesPitch, semitones, position, play);
+    return;
+  }
+
   const audio = getAudio();
   if (!audio) return;
   fallbackTrackId = null;
-  usePlayer.setState({ playbackError: null });
+  usePlayer.setState({ playbackError: null, playbackNotice: null });
   audio.src = trackSrc(track.id);
   audio.load();
   applyPlaybackSettings(audio, { rate, preservesPitch });
-  playWithRetry(audio, 0);
+  if (position > 0) {
+    const restore = () => {
+      audio.removeEventListener("loadedmetadata", restore);
+      audio.currentTime = position;
+    };
+    audio.addEventListener("loadedmetadata", restore);
+  }
+  if (play) {
+    playWithRetry(audio, 0);
+  }
 }
 
 export function handleAudioError(audio: HTMLAudioElement) {
   const mediaError = audio.error;
-  const { queue, index, rate, preservesPitch } = usePlayer.getState();
+  const { queue, index, rate, preservesPitch, pitchSemitones } = usePlayer.getState();
   const track = queue[index];
   if (!track) return;
 
@@ -83,7 +179,12 @@ export function handleAudioError(audio: HTMLAudioElement) {
     (mediaError.code === mediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
       mediaError.code === mediaError.MEDIA_ERR_DECODE);
 
-  if (isFallbackable && isIos() && fallbackTrackId !== track.id) {
+  if (
+    isFallbackable &&
+    pitchSemitones === 0 &&
+    isIos() &&
+    fallbackTrackId !== track.id
+  ) {
     fallbackTrackId = track.id;
     const position = audio.currentTime;
     console.warn(
@@ -115,19 +216,21 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   duration: 0,
   rate: 1,
   preservesPitch: true,
+  pitchSemitones: 0,
   playbackError: null,
+  playbackNotice: null,
 
   playQueue: (tracks, index = 0) => {
     if (tracks.length === 0) return;
     const target = Math.min(Math.max(index, 0), tracks.length - 1);
-    const { rate, preservesPitch } = get();
+    const { rate, preservesPitch, pitchSemitones } = get();
     set({ queue: tracks, index: target, isPlaying: true, progress: 0, duration: 0 });
-    startTrack(tracks[target], rate, preservesPitch);
+    startTrack(tracks[target], rate, preservesPitch, pitchSemitones);
   },
 
   togglePlay: () => {
     const audio = getAudio();
-    const { isPlaying, queue, index, rate, preservesPitch } = get();
+    const { isPlaying, queue, index, rate, preservesPitch, pitchSemitones } = get();
     if (!audio || queue.length === 0) return;
     if (isPlaying) {
       audio.pause();
@@ -135,7 +238,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       return;
     }
     if (!audio.src) {
-      startTrack(queue[index], rate, preservesPitch);
+      startTrack(queue[index], rate, preservesPitch, pitchSemitones);
     } else {
       playWithRetry(audio, 0);
     }
@@ -143,7 +246,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   next: () => {
-    const { queue, index, rate, preservesPitch } = get();
+    const { queue, index, rate, preservesPitch, pitchSemitones } = get();
     const nextIndex = index + 1;
     if (nextIndex >= queue.length) {
       getAudio()?.pause();
@@ -151,12 +254,12 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       return;
     }
     set({ index: nextIndex, isPlaying: true, progress: 0, duration: 0 });
-    startTrack(queue[nextIndex], rate, preservesPitch);
+    startTrack(queue[nextIndex], rate, preservesPitch, pitchSemitones);
   },
 
   prev: () => {
     const audio = getAudio();
-    const { queue, index, progress, rate, preservesPitch } = get();
+    const { queue, index, progress, rate, preservesPitch, pitchSemitones } = get();
     if (audio && progress > 3) {
       audio.currentTime = 0;
       set({ progress: 0 });
@@ -169,7 +272,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       return;
     }
     set({ index: prevIndex, isPlaying: true, progress: 0, duration: 0 });
-    startTrack(queue[prevIndex], rate, preservesPitch);
+    startTrack(queue[prevIndex], rate, preservesPitch, pitchSemitones);
   },
 
   seekTo: (sec) => {
@@ -203,12 +306,32 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     set({ preservesPitch: value });
   },
 
+  setPitchSemitones: (value) => {
+    const clamped = Math.max(-12, Math.min(12, Math.round(value)));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(PITCH_SEMITONES_KEY, String(clamped));
+    }
+    set({ pitchSemitones: clamped });
+
+    const audio = getAudio();
+    const { queue, index, isPlaying, rate, preservesPitch } = get();
+    const track = queue[index];
+    if (!track || !audio) return;
+
+    const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    startTrack(track, rate, preservesPitch, clamped, { position, play: isPlaying });
+  },
+
   hydrateSettings: () => {
     if (typeof window === "undefined") return;
     const storedRate = Number(localStorage.getItem(RATE_KEY) ?? "1");
     const rate = Number.isFinite(storedRate) ? Math.min(4, Math.max(0.5, storedRate)) : 1;
     const preservesPitch = localStorage.getItem(PITCH_KEY) !== "false";
-    set({ rate, preservesPitch });
+    const storedPitch = Number(localStorage.getItem(PITCH_SEMITONES_KEY) ?? "0");
+    const pitchSemitones = Number.isFinite(storedPitch)
+      ? Math.max(-12, Math.min(12, Math.round(storedPitch)))
+      : 0;
+    set({ rate, preservesPitch, pitchSemitones });
     const audio = getAudio();
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
@@ -216,10 +339,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   retryCurrent: () => {
-    const { queue, index, rate, preservesPitch } = get();
+    const { queue, index, rate, preservesPitch, pitchSemitones } = get();
     const track = queue[index];
     if (!track) return;
-    set({ playbackError: null });
-    startTrack(track, rate, preservesPitch);
+    set({ playbackError: null, playbackNotice: null });
+    startTrack(track, rate, preservesPitch, pitchSemitones);
   },
 }));

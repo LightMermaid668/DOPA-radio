@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
-import { tracks } from "@/db/schema";
+import { tracks, visibilityEnum } from "@/db/schema";
 import { getSession } from "@/lib/session";
+
+type Visibility = (typeof visibilityEnum.enumValues)[number];
 
 export async function GET() {
   const session = await getSession();
@@ -29,4 +31,31 @@ export async function GET() {
     .orderBy(desc(tracks.createdAt));
 
   return NextResponse.json({ tracks: rows });
+}
+
+type BulkPatchBody = {
+  ids?: string[];
+  visibility?: string;
+};
+
+export async function PATCH(request: Request) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
+  }
+
+  const body = (await request.json().catch(() => null)) as BulkPatchBody | null;
+  if (!body?.ids?.length || body.ids.length > 500) {
+    return NextResponse.json({ error: "対象が指定されていません" }, { status: 400 });
+  }
+  if (!visibilityEnum.enumValues.includes(body.visibility as Visibility)) {
+    return NextResponse.json({ error: "公開範囲が不正です" }, { status: 400 });
+  }
+
+  await db
+    .update(tracks)
+    .set({ visibility: body.visibility as Visibility, updatedAt: new Date() })
+    .where(and(eq(tracks.ownerId, session.user.id), inArray(tracks.id, body.ids)));
+
+  return NextResponse.json({ ok: true });
 }

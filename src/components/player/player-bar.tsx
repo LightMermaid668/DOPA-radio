@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { Gauge, Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Gauge, Loader2, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { applyPlaybackSettings, getAudio } from "@/lib/player-audio";
@@ -37,6 +37,9 @@ export function PlayerBar() {
   const setPreservesPitch = usePlayer((s) => s.setPreservesPitch);
   const hydrateSettings = usePlayer((s) => s.hydrateSettings);
   const playbackError = usePlayer((s) => s.playbackError);
+  const playbackNotice = usePlayer((s) => s.playbackNotice);
+  const pitchSemitones = usePlayer((s) => s.pitchSemitones);
+  const setPitchSemitones = usePlayer((s) => s.setPitchSemitones);
   const retryCurrent = usePlayer((s) => s.retryCurrent);
 
   const track = queue[index] ?? null;
@@ -184,7 +187,9 @@ export function PlayerBar() {
                 onClick={() => setSpeedOpen((v) => !v)}
                 className={cn(
                   "flex h-8 items-center gap-1 rounded-full border border-dopa-700 px-2.5 text-xs font-semibold",
-                  rate === 1 ? "text-zinc-300" : "border-accent text-accent",
+                  rate === 1 && pitchSemitones === 0
+                    ? "text-zinc-300"
+                    : "border-accent text-accent",
                 )}
                 aria-label="再生速度"
               >
@@ -193,9 +198,76 @@ export function PlayerBar() {
               </button>
 
               {speedOpen ? (
-                <div className="absolute right-0 bottom-11 w-40 rounded-xl border border-dopa-700 bg-dopa-900 p-2 shadow-xl">
-                  <label className="flex cursor-pointer items-center justify-between px-2 py-1.5 text-xs text-zinc-300">
-                    ピッチを維持
+                <div className="absolute right-0 bottom-11 w-64 rounded-xl border border-dopa-700 bg-dopa-900 p-3 shadow-xl">
+                  <div className="px-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                      <span>速度</span>
+                      <span className="font-semibold text-accent">{rate}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={4}
+                      step={0.05}
+                      value={rate}
+                      onChange={(e) => setRate(Number(e.target.value))}
+                      className="mt-1 w-full cursor-pointer accent-amber-500"
+                      aria-label="再生速度スライダー"
+                    />
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-4 gap-1">
+                    {RATE_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setRate(option)}
+                        className={cn(
+                          "rounded-lg px-1 py-1 text-center text-[11px]",
+                          option === rate
+                            ? "bg-dopa-800 font-semibold text-accent"
+                            : "text-zinc-300 hover:bg-dopa-800",
+                        )}
+                      >
+                        {option}x
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="my-2 h-px bg-dopa-800" />
+
+                  <div className="px-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                      <span>ピッチ（音程のみ）</span>
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          pitchSemitones === 0 ? "text-zinc-400" : "text-accent",
+                        )}
+                      >
+                        {pitchSemitones > 0 ? `+${pitchSemitones}` : pitchSemitones} 半音
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-12}
+                      max={12}
+                      step={1}
+                      value={pitchSemitones}
+                      onChange={(e) => setPitchSemitones(Number(e.target.value))}
+                      className="mt-1 w-full cursor-pointer accent-amber-500"
+                      aria-label="ピッチスライダー"
+                    />
+                    <p className="mt-1 text-[10px] leading-tight text-zinc-500">
+                      初回はサーバーで音源を生成します（数秒）
+
+                    </p>
+                  </div>
+
+                  <div className="my-2 h-px bg-dopa-800" />
+
+                  <label className="flex cursor-pointer items-center justify-between px-1 text-xs text-zinc-300">
+                    速度変更でも声を変えない
                     <input
                       type="checkbox"
                       checked={preservesPitch}
@@ -203,28 +275,6 @@ export function PlayerBar() {
                       className="accent-amber-500"
                     />
                   </label>
-                  <div className="my-1 h-px bg-dopa-800" />
-                  <div className="max-h-56 overflow-y-auto">
-                    {RATE_OPTIONS.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => {
-                          setRate(option);
-                          setSpeedOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs",
-                          option === rate
-                            ? "bg-dopa-800 font-semibold text-accent"
-                            : "text-zinc-300 hover:bg-dopa-800",
-                        )}
-                      >
-                        {option}x
-                        {option === rate ? <span>✓</span> : null}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               ) : null}
             </div>
@@ -244,6 +294,13 @@ export function PlayerBar() {
             />
             <span className="w-9">{formatTime(duration)}</span>
           </div>
+
+          {playbackNotice ? (
+            <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              <span className="min-w-0 flex-1 truncate">{playbackNotice}</span>
+            </div>
+          ) : null}
 
           {playbackError ? (
             <div className="mt-2 flex items-center gap-3 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
