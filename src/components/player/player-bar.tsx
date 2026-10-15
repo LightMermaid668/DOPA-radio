@@ -18,7 +18,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { applyPlaybackSettings, getAudio, maxPlaybackRate } from "@/lib/player-audio";
-import { getSpectrumData } from "@/lib/eq";
+import { ensureCaptureAnalyser, getSpectrumData } from "@/lib/eq";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
 
@@ -209,8 +209,19 @@ export function PlayerBar() {
       return () => window.removeEventListener("resize", resize);
     }
 
+    let captureReady = false;
+    let frame = 0;
+
     const loop = () => {
       const { isPlaying, rate } = usePlayer.getState();
+      frame++;
+
+      // captureStream による実解析を試行（対応ブラウザなら常に本物のスペクトル）
+      if (!captureReady && isPlaying && (frame === 1 || frame % 120 === 0)) {
+        const audio = getAudio();
+        if (audio) captureReady = ensureCaptureAnalyser(audio);
+      }
+
       const time = performance.now() / 1000;
       drawFrame(time, rate || 1, isPlaying);
       raf = requestAnimationFrame(loop);

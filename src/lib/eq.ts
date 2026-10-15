@@ -25,7 +25,6 @@ let graph: {
   limiter: DynamicsCompressorNode;
 } | null = null;
 let analyser: AnalyserNode | null = null;
-let analyserData: Uint8Array<ArrayBuffer> | null = null;
 
 /**
  * Web Audio のサウンドグラフ（EQ + 音量ブースト + リミッター）を構築して AudioContext を再開する。
@@ -81,7 +80,6 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
 
       graph = { bass, mid, treble, boost, limiter };
       analyser = analyserNode;
-      analyserData = new Uint8Array(analyserNode.frequencyBinCount);
     }
     if (audioContext.state === "suspended") {
       await audioContext.resume();
@@ -111,33 +109,70 @@ export function eqGraphReady(): boolean {
   return Boolean(audioContext && graph);
 }
 
+/* ---- captureStream による「覗き見」解析 ----
+ * 音声出力は要素のネイティブ再生のまま（バックグラウンド再生を壊さず）に、
+ * captureStream で複製したストリームだけを解析して本物のスペクトルを得る。
+ * Chrome / Edge / Firefox / Android Chrome で利用可能（Safariは非対応）。 */
+
+let captureContext: AudioContext | null = null;
+let captureAnalyser: AnalyserNode | null = null;
+
+export function ensureCaptureAnalyser(audio: HTMLAudioElement): boolean {
+  if (captureAnalyser) return true;
+  try {
+    const captureFn = (
+      audio as HTMLAudioElement & { captureStream?: () => MediaStream }
+    ).captureStream;
+    if (typeof captureFn !== "function") return false;
+
+    const stream = captureFn.call(audio);
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return false;
+
+    captureContext = new Ctor();
+    const source = captureContext.createMediaStreamSource(stream);
+    const analyserNode = captureContext.createAnalyser();
+    analyserNode.fftSize = 512;
+    analyserNode.smoothingTimeConstant = 0.6;
+    source.connect(analyserNode);
+    // destination には接続しない（音はaudio要素が直接鳴らす）
+    void captureContext.resume().catch(() => {});
+    captureAnalyser = analyserNode;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let bassBuffer: Uint8Array<ArrayBuffer> | null = null;
+
 /**
- * 低音成分のエネルギー（0〜1）。サウンドグラフ未接続時は null。
+ * 低音成分のエネルギー（0〜1）。実解析が使えない場合は null。
  */
 export function getBassEnergy(): number | null {
-  if (!analyser || !analyserData) return null;
-  analyser.getByteFrequencyData(analyserData);
-  const bins = Math.min(12, analyserData.length);
+  const node = analyser ?? captureAnalyser;
+  if (!node) return null;
+  if (!bassBuffer || bassBuffer.length !== node.frequencyBinCount) {
+    bassBuffer = new Uint8Array(node.frequencyBinCount);
+  }
+  node.getByteFrequencyData(bassBuffer);
+  const bins = Math.min(12, bassBuffer.length);
   let sum = 0;
   for (let i = 0; i < bins; i++) {
-    sum += analyserData[i];
+    sum += bassBuffer[i];
   }
   return sum / (bins * 255);
 }
 
 /**
- * 周波数スペクトルを target に書き込む（余りは0埋め）。
- * サウンドグラフ未接続時は false を返す。
+ * 周波数スペクトルを target に書き込む。
+ * EQグラフ → captureStream → どちらも無ければ false（疑似表示にフォールバック）。
  */
 export function getSpectrumData(target: Uint8Array<ArrayBuffer>): boolean {
-  if (!analyser || !analyserData) return false;
-  analyser.getByteFrequencyData(analyserData);
-  const length = Math.min(target.length, analyserData.length);
-  for (let i = 0; i < length; i++) {
-    target[i] = analyserData[i];
-  }
-  for (let i = length; i < target.length; i++) {
-    target[i] = 0;
-  }
+  const node = analyser ?? captureAnalyser;
+  if (!node) return false;
+  node.getByteFrequencyData(target);
   return true;
 }
