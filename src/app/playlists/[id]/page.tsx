@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, House } from "lucide-react";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import {
@@ -94,7 +94,16 @@ export default async function PlaylistPage({
           <ArrowLeft className="size-4" />
           プレイリスト一覧
         </Link>
-        <SignOutButton />
+        <div className="flex items-center gap-0.5">
+          <Link
+            href="/home"
+            aria-label="ホーム"
+            className="flex size-9 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800 hover:text-zinc-200"
+          >
+            <House className="size-4.5" />
+          </Link>
+          <SignOutButton />
+        </div>
       </header>
 
       <PlaylistDetail data={data} currentUserId={session.user.id} />

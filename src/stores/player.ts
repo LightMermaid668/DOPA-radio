@@ -682,13 +682,15 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
       if (eqEnabled || boostLevel > MIN_BOOST) {
-        void ensureEqGraph(audio).then((ok) => {
-          if (!ok) return;
-          if (eqEnabled) {
-            applyEqGains({ bass: eqBass, mid: eqMid, treble: eqTreble });
-          }
-          applyBoostGain(boostLevel);
-        });
+        // グラフ生成は必ずユーザー操作内で行う（自動再生ポリシーで
+        // サスペンド状態のAudioContextに接続され無音になるのを防ぐ）
+        const arm = () => {
+          const target = getAudio();
+          if (target) activateSoundGraph(target);
+        };
+        if (typeof document !== "undefined") {
+          document.addEventListener("pointerdown", arm, { once: true });
+        }
       }
     }
   },

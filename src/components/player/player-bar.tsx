@@ -19,7 +19,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { applyPlaybackSettings, getAudio, maxPlaybackRate } from "@/lib/player-audio";
-import { ensureCaptureAnalyser, getWaveformData } from "@/lib/eq";
+import { ensureCaptureAnalyser, eqGraphReady, getBassEnergy } from "@/lib/eq";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
 
@@ -110,8 +110,10 @@ export function PlayerBar() {
       if (
         state.chorusOnly &&
         state.isPlaying &&
+        !audio.paused &&
         current?.kind === "upload" &&
         current.chorusEndSec != null &&
+        current.chorusEndSec - (current.chorusStartSec ?? 0) >= 5 &&
         audio.currentTime >= current.chorusEndSec - 0.08
       ) {
         const key = `${current.id}:${state.index}:${state.queue.length}`;
@@ -165,10 +167,10 @@ export function PlayerBar() {
 
     const COLUMNS = 128;
     const levels = new Float32Array(COLUMNS);
-    const waveform = new Uint8Array(256);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = canvas.getContext("2d");
     let raf = 0;
+    let bassEnv = 0;
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -186,32 +188,44 @@ export function PlayerBar() {
       const mid = height / 2;
       context.clearRect(0, 0, width, height);
 
-      const hasReal = playing ? getWaveformData(waveform) : false;
+      // 低音（ベース）エネルギーを取得。実解析が無い場合は疑似キックで駆動
+      let bassTarget = 0;
+      if (playing) {
+        const real = getBassEnergy();
+        if (real !== null) {
+          bassTarget = real;
+        } else {
+          const kick = Math.max(0, Math.sin(time * speed * Math.PI * 2 * 2.1));
+          const off = Math.max(
+            0,
+            Math.sin(time * speed * Math.PI * 2 * 4.2 + 1.3),
+          );
+          bassTarget =
+            0.14 + 0.62 * Math.pow(kick, 3) + 0.14 * Math.pow(off, 4);
+        }
+      }
+
+      // 速いアタック・緩いリリースで「ドパドパ」感を強調
+      bassEnv += (bassTarget - bassEnv) * (bassTarget > bassEnv ? 0.6 : 0.12);
+      const amp = Math.min(1, bassEnv * 2.6);
 
       for (let i = 0; i < COLUMNS; i++) {
         let target = 0;
-
-        if (playing) {
-          if (hasReal) {
-            const sampleIndex = Math.floor((i / (COLUMNS - 1)) * (waveform.length - 1));
-            target = ((waveform[sampleIndex] - 128) / 128) * 1.7;
-          } else {
-            const phase = i / COLUMNS;
-            const envelope =
-              0.35 + 0.3 * Math.sin(time * speed * 2 * Math.PI * 1.4) ** 2;
-            target =
-              (Math.sin(phase * Math.PI * 2 * 3 + time * speed * 4.2) * 0.5 +
-                Math.sin(phase * Math.PI * 2 * 7 - time * speed * 2.6) * 0.3 +
-                Math.sin(phase * Math.PI * 2 * 1.5 + time * speed * 1.7) * 0.25) *
-              envelope *
-              1.6;
-          }
+        if (playing && amp > 0.001) {
+          const phase = i / COLUMNS;
+          // ライン全体が低音に合わせて激しく上下し、さざ波が走る
+          target =
+            (Math.sin(phase * Math.PI * 2 * 1.6 + time * speed * 2.6) * 0.55 +
+              Math.sin(phase * Math.PI * 2 * 4.2 - time * speed * 4.0) * 0.3 +
+              Math.sin(phase * Math.PI * 2 * 8.5 + time * speed * 6.5) * 0.15) *
+            amp *
+            2.1;
         }
 
         target = Math.max(-1, Math.min(1, target));
         levels[i] +=
           (target - levels[i]) *
-          (Math.abs(target) > Math.abs(levels[i]) ? 0.5 : 0.18);
+          (Math.abs(target) > Math.abs(levels[i]) ? 0.6 : 0.22);
       }
 
       const gradient = context.createLinearGradient(0, 0, width, 0);
@@ -235,11 +249,11 @@ export function PlayerBar() {
         }
       }
       context.strokeStyle = gradient;
-      context.lineWidth = Math.max(1.5, height * 0.16);
+      context.lineWidth = Math.max(1.5, height * 0.16) * (1 + amp * 0.9);
       context.lineJoin = "round";
       context.lineCap = "round";
-      context.shadowColor = "rgba(232, 121, 249, 0.55)";
-      context.shadowBlur = Math.max(4, height * 0.55);
+      context.shadowColor = "rgba(232, 121, 249, 0.6)";
+      context.shadowBlur = Math.max(4, height * (0.5 + amp * 0.9));
       context.stroke();
       context.shadowBlur = 0;
     };
@@ -257,7 +271,14 @@ export function PlayerBar() {
       frame++;
 
       // captureStream による実解析を試行（対応ブラウザなら常に本物の波形）
-      if (!captureReady && isPlaying && (frame === 1 || frame % 120 === 0)) {
+      // ※ EQ/音量ブーストのグラフがある場合は captureStream を作らない
+      //    （同じ要素に MediaElementSource と captureStream を併用すると無音になるブラウザがある）
+      if (
+        !captureReady &&
+        isPlaying &&
+        !eqGraphReady() &&
+        (frame === 1 || frame % 120 === 0)
+      ) {
         const audio = getAudio();
         if (audio) captureReady = ensureCaptureAnalyser(audio);
       }
@@ -329,7 +350,7 @@ export function PlayerBar() {
           viewTransitionName: "player-bar",
         }}
       >
-        <canvas ref={canvasRef} className="h-4 w-full" aria-hidden />
+        <canvas ref={canvasRef} className="h-5 w-full" aria-hidden />
         <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
           <div className="flex items-center gap-2">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">

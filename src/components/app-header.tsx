@@ -1,4 +1,4 @@
-import { Settings, UploadCloud } from "lucide-react";
+import { House, Settings, UploadCloud } from "lucide-react";
 import Link from "next/link";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -12,6 +12,13 @@ export function AppHeader() {
         <Logo />
       </Link>
       <div className="flex items-center gap-0.5">
+        <Link
+          href="/home"
+          aria-label="ホーム"
+          className="flex size-9 items-center justify-center rounded-full text-zinc-300 hover:bg-dopa-800"
+        >
+          <House className="size-4.5" />
+        </Link>
         <QrScannerButton />
         <Link
           href="/upload"
