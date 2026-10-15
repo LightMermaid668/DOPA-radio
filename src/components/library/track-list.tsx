@@ -10,6 +10,7 @@ import {
   Check,
   Loader2,
   Pencil,
+  Pin,
   Play,
   Trash2,
   UploadCloud,
@@ -32,6 +33,7 @@ export type LibraryTrack = {
   playCount: number;
   transcodeError: string | null;
   hasArtwork: boolean;
+  pinned: boolean;
 };
 
 const VISIBILITY_LABELS: Record<LibraryTrack["visibility"], string> = {
@@ -336,6 +338,18 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                     )}
                   </select>
 
+                  <button
+                    type="button"
+                    onClick={() => patchTrack(track.id, { pinned: !track.pinned })}
+                    disabled={busyId === track.id}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-full hover:bg-dopa-800",
+                      track.pinned ? "text-accent" : "text-zinc-400 hover:text-zinc-200",
+                    )}
+                    aria-label={track.pinned ? "ピン留めを解除" : "ピン留め"}
+                  >
+                    <Pin className="size-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => startEdit(track)}

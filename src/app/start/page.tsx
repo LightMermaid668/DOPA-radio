@@ -11,6 +11,6 @@ export const dynamic = "force-dynamic";
  */
 export default async function StartPage() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (session) redirect("/library");
-  redirect("/login?redirect=/library");
+  if (session) redirect("/home");
+  redirect("/login?redirect=/home");
 }

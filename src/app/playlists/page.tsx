@@ -5,14 +5,12 @@ import Link from "next/link";
 import { count, desc, eq } from "drizzle-orm";
 import { ListMusic } from "lucide-react";
 
-import { SignOutButton } from "@/components/auth/sign-out-button";
-import { Logo } from "@/components/logo";
+import { AppHeader } from "@/components/app-header";
 import { CreatePlaylistForm } from "@/components/playlists/create-playlist-form";
-import { buttonVariants } from "@/components/ui/button";
+import { ImportPlaylistForm } from "@/components/playlists/import-playlist-form";
 import { db } from "@/db";
 import { playlistItems, playlists } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "プレイリスト" };
 export const dynamic = "force-dynamic";
@@ -44,22 +42,12 @@ export default async function PlaylistsPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
-      <header className="flex items-center justify-between py-6">
-        <Logo />
-        <div className="flex items-center gap-3">
-          <Link
-            href="/library"
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-          >
-            ライブラリ
-          </Link>
-          <SignOutButton />
-        </div>
-      </header>
+      <AppHeader />
 
-      <section className="pb-6">
-        <h1 className="mb-4 text-2xl font-black">プレイリスト</h1>
+      <section className="flex flex-col gap-3 pb-6">
+        <h1 className="text-2xl font-black">プレイリスト</h1>
         <CreatePlaylistForm />
+        <ImportPlaylistForm />
       </section>
 
       {rows.length === 0 ? (

@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { Logo } from "@/components/logo";
 import { ImportPlaylistButton } from "@/components/playlists/import-playlist-button";
 import { PublicPlayButton, type PublicTrack } from "@/components/playlists/public-play-button";
+import { SaveTrackButton } from "@/components/playlists/save-track-button";
 import { db } from "@/db";
-import { playlistItems, playlists, tracks } from "@/db/schema";
+import { playlistItems, playlists, savedTracks, tracks } from "@/db/schema";
 import { user } from "@/db/auth-schema";
+import { auth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +70,7 @@ export default async function PublicPlaylistPage({
       kind: playlistItems.kind,
       trackId: playlistItems.trackId,
       externalMeta: playlistItems.externalMeta,
+      ownerId: tracks.ownerId,
       title: tracks.title,
       artist: tracks.artist,
       durationSec: tracks.durationSec,
@@ -78,10 +82,32 @@ export default async function PublicPlaylistPage({
     .where(eq(playlistItems.playlistId, playlist.id))
     .orderBy(asc(playlistItems.position));
 
+  const session = await auth.api.getSession({ headers: await headers() });
+
+  const savedTrackIds = new Set<string>();
+  if (session) {
+    const uploadTrackIds = rows
+      .filter((row) => row.kind === "upload" && row.trackId)
+      .map((row) => row.trackId as string);
+    if (uploadTrackIds.length > 0) {
+      const savedRows = await db
+        .select({ trackId: savedTracks.trackId })
+        .from(savedTracks)
+        .where(
+          and(
+            eq(savedTracks.userId, session.user.id),
+            inArray(savedTracks.trackId, uploadTrackIds),
+          ),
+        );
+      for (const saved of savedRows) savedTrackIds.add(saved.trackId);
+    }
+  }
+
   const displayItems = rows.map((row) => ({
     itemId: row.itemId,
     kind: row.kind,
     trackId: row.trackId,
+    ownerId: row.ownerId,
     status: row.status,
     hasArtwork: Boolean(row.artworkKey),
     title: row.title ?? row.externalMeta?.title ?? null,
@@ -195,6 +221,12 @@ export default async function PublicPlaylistPage({
                 {item.artist ?? "アーティスト不明"}
               </p>
             </div>
+            {session && item.kind === "upload" && item.trackId && item.ownerId !== session.user.id ? (
+              <SaveTrackButton
+                trackId={item.trackId}
+                initialSaved={savedTrackIds.has(item.trackId)}
+              />
+            ) : null}
             <span className="shrink-0 text-xs text-zinc-500">
               {formatDuration(item.durationSec)}
             </span>

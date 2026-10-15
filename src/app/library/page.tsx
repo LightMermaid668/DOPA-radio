@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { AppHeader } from "@/components/app-header";
 import { TrackList, type LibraryTrack } from "@/components/library/track-list";
-import { Logo } from "@/components/logo";
-import { buttonVariants } from "@/components/ui/button";
 import { db } from "@/db";
 import { tracks } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "ライブラリ" };
 export const dynamic = "force-dynamic";
@@ -35,6 +31,7 @@ export default async function LibraryPage() {
       playCount: tracks.playCount,
       transcodeError: tracks.transcodeError,
       artworkKey: tracks.artworkKey,
+      pinnedAt: tracks.pinnedAt,
     })
     .from(tracks)
     .where(eq(tracks.ownerId, user.id))
@@ -52,32 +49,12 @@ export default async function LibraryPage() {
     playCount: row.playCount,
     transcodeError: row.transcodeError,
     hasArtwork: Boolean(row.artworkKey),
+    pinned: Boolean(row.pinnedAt),
   }));
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
-      <header className="flex items-center justify-between py-6">
-        <Logo />
-        <div className="flex items-center gap-4">
-          <span className="hidden text-xs text-zinc-400 sm:inline">{user.name}</span>
-          <Link
-            href="/playlists"
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-          >
-            プレイリスト
-          </Link>
-          <Link href="/upload" className={cn(buttonVariants({ size: "sm" }))}>
-            アップロード
-          </Link>
-          <Link
-            href="/settings"
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-          >
-            設定
-          </Link>
-          <SignOutButton />
-        </div>
-      </header>
+      <AppHeader />
 
       <section className="pb-6">
         <h1 className="mb-1 text-2xl font-black">ライブラリ</h1>

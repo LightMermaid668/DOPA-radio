@@ -49,6 +49,7 @@ type PatchBody = {
   album?: string | null;
   genre?: string | null;
   visibility?: string;
+  pinned?: boolean;
 };
 
 export async function PATCH(
@@ -85,6 +86,9 @@ export async function PATCH(
       return NextResponse.json({ error: "公開範囲が不正です" }, { status: 400 });
     }
     patch.visibility = body.visibility as Visibility;
+  }
+  if (typeof body.pinned === "boolean") {
+    patch.pinnedAt = body.pinned ? new Date() : null;
   }
 
   await db.update(tracks).set(patch).where(eq(tracks.id, id));

@@ -48,6 +48,7 @@ export const tracks = pgTable(
     artworkKey: text("artwork_key"),
     status: trackStatusEnum("status").notNull().default("processing"),
     transcodeError: text("transcode_error"),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
     visibility: visibilityEnum("visibility").notNull().default("private"),
     rightsConfirmed: boolean("rights_confirmed").notNull().default(false),
     playCount: integer("play_count").notNull().default(0),
@@ -166,6 +167,25 @@ export const plays = pgTable(
     playedAt: timestamp("played_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("plays_played_at_idx").on(t.playedAt), index("plays_track_idx").on(t.trackId)],
+);
+
+export const savedTracks = pgTable(
+  "saved_tracks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // 元の曲が削除されると保存も自動的に消える（参照方式）
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("saved_tracks_unique").on(t.userId, t.trackId),
+    index("saved_tracks_user_idx").on(t.userId),
+  ],
 );
 
 export type Track = typeof tracks.$inferSelect;
