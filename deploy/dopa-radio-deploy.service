@@ -1,0 +1,11 @@
+[Unit]
+Description=DOPA-radio deploy (prod ブランチを取得して再ビルド)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/dopa-radio
+ExecStart=/opt/dopa-radio/deploy/deploy.sh
+TimeoutStartSec=1800

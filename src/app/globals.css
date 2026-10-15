@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --color-dopa-950: #0a0a0c;
+  --color-dopa-900: #121216;
+  --color-dopa-800: #1b1b22;
+  --color-dopa-700: #26262f;
+  --color-accent: #f59e0b;
+  --color-accent-strong: #f97316;
+  --font-sans: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-dopa-950 text-zinc-100 antialiased;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: #0a0a0c;
+}

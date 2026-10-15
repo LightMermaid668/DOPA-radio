@@ -1,0 +1,102 @@
+name: dopa-radio
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dopa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD を .env に設定してください}
+      POSTGRES_DB: ${POSTGRES_DB:-dopa}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER を .env に設定してください}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD を .env に設定してください}
+    volumes:
+      - miniodata:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: >
+      /bin/sh -c '
+      until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+        echo "waiting for minio..."; sleep 2;
+      done;
+      mc mb --ignore-existing local/uploads;
+      mc mb --ignore-existing local/media;
+      echo "buckets ready"'
+
+  web:
+    build: .
+    image: dopa-radio:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    command: sh -c "npm run db:migrate && npm run start"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build: .
+    image: dopa-radio:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    command: sh -c "npm run worker"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-dopa-radio.sosukeiwasaki.f5.si}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN:-media.dopa-radio.sosukeiwasaki.f5.si}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+      - minio
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN を .env に設定してください}
+    depends_on:
+      - caddy
+
+volumes:
+  pgdata:
+  miniodata:
+  caddydata:
+  caddyconfig:

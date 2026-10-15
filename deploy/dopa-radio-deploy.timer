@@ -1,0 +1,10 @@
+[Unit]
+Description=DOPA-radio deploy timer (5分間隔で prod を確認)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

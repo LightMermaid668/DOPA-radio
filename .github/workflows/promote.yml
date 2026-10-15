@@ -1,0 +1,23 @@
+name: promote-to-prod
+
+# 手動実行（Actions タブ → promote-to-prod → Run workflow）
+# main を prod にファストフォワードする。prod が更新されると LXC が自動デプロイする。
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: promote-to-prod
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Fast-forward prod to main
+        run: git push origin HEAD:prod

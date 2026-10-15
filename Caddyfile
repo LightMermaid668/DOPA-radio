@@ -1,0 +1,16 @@
+# オリジンはCloudflare Tunnel経由（TLSはCloudflareのエッジで終端）
+{
+	auto_https off
+}
+
+# アプリ本体
+http://{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+# MinIO（presigned URL の配信先。Range リクエスト対応）
+http://{$MEDIA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy minio:9000
+}
