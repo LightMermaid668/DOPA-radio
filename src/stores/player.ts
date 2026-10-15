@@ -263,6 +263,11 @@ function activateSoundGraph(audio: HTMLAudioElement) {
         : { bass: 0, mid: 0, treble: 0 },
     );
     applyBoostGain(boostLevel);
+
+    // iOS Safari は MediaElementSource 接続直後に再生が止まる/無音になることがあるため再開させる
+    if (usePlayer.getState().isPlaying) {
+      void audio.play().catch(() => {});
+    }
   });
 }
 

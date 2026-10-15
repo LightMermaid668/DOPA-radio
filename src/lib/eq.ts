@@ -84,6 +84,15 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
+
+    // iOS Safari: ジェスチャー外から resume できない場合があるため、次のタップで再開を試みる
+    if (audioContext.state !== "running" && typeof document !== "undefined") {
+      const resumeOnGesture = () => {
+        void audioContext?.resume().catch(() => {});
+        document.removeEventListener("pointerdown", resumeOnGesture);
+      };
+      document.addEventListener("pointerdown", resumeOnGesture);
+    }
     return true;
   } catch (error) {
     console.warn("[eq] failed to build audio graph:", error);
@@ -174,5 +183,16 @@ export function getSpectrumData(target: Uint8Array<ArrayBuffer>): boolean {
   const node = analyser ?? captureAnalyser;
   if (!node) return false;
   node.getByteFrequencyData(target);
+  return true;
+}
+
+/**
+ * 波形（時間軸）データを target に書き込む。実音量に比例した振幅が得られる。
+ * 無音時は中央値128のフラットな配列になる。
+ */
+export function getWaveformData(target: Uint8Array<ArrayBuffer>): boolean {
+  const node = analyser ?? captureAnalyser;
+  if (!node) return false;
+  node.getByteTimeDomainData(target);
   return true;
 }

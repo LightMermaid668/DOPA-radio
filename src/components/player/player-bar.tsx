@@ -18,7 +18,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { applyPlaybackSettings, getAudio, maxPlaybackRate } from "@/lib/player-audio";
-import { ensureCaptureAnalyser, getSpectrumData } from "@/lib/eq";
+import { ensureCaptureAnalyser, getWaveformData } from "@/lib/eq";
 import { cn } from "@/lib/utils";
 import { handleAudioError, usePlayer, type EqBand } from "@/stores/player";
 
@@ -133,17 +133,17 @@ export function PlayerBar() {
     };
   }, []);
 
-  // スペクトラムアナライザー（虹色バー）
-  // EQ/音量ブーストON時は実際の音を解析、OFF時は疑似スペクトルでダンス
+  // リアル波形ライン（横一直線ベース）
+  // captureStream/EQグラフで実際の音を解析し、音量に応じて虹色の線が波打つ。無音時は一直線。
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!track) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const BAR_COUNT = 56;
-    const levels = new Float32Array(BAR_COUNT);
-    const spectrum = new Uint8Array(256);
+    const COLUMNS = 128;
+    const levels = new Float32Array(COLUMNS);
+    const waveform = new Uint8Array(256);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const context = canvas.getContext("2d");
     let raf = 0;
@@ -161,47 +161,65 @@ export function PlayerBar() {
       if (!context) return;
       const width = canvas.width;
       const height = canvas.height;
+      const mid = height / 2;
       context.clearRect(0, 0, width, height);
 
-      const hasReal = playing ? getSpectrumData(spectrum) : false;
-      const barWidth = width / BAR_COUNT;
-      const gap = Math.max(1, barWidth * 0.28);
+      const hasReal = playing ? getWaveformData(waveform) : false;
 
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const norm = i / (BAR_COUNT - 1);
+      for (let i = 0; i < COLUMNS; i++) {
         let target = 0;
 
-        if (playing && !reduced) {
+        if (playing) {
           if (hasReal) {
-            const bin = Math.min(
-              spectrum.length - 1,
-              Math.max(1, Math.floor(Math.pow(norm, 1.55) * 190)),
-            );
-            const lo = Math.max(0, bin - 1);
-            const hi = Math.min(spectrum.length - 1, bin + 1);
-            let sum = 0;
-            for (let b = lo; b <= hi; b++) sum += spectrum[b];
-            target = ((sum / (hi - lo + 1)) / 255) * (1.3 - norm * 0.5);
+            const sampleIndex = Math.floor((i / (COLUMNS - 1)) * (waveform.length - 1));
+            target = ((waveform[sampleIndex] - 128) / 128) * 1.7;
           } else {
-            const phase = i * 0.55;
-            const env1 =
-              0.5 + 0.5 * Math.sin(time * speed * 2 * Math.PI * 1.3 + phase * 0.9);
-            const env2 =
-              0.5 + 0.5 * Math.sin(time * speed * 2 * Math.PI * 3.6 + phase * 1.6);
-            target = (0.22 + 0.78 * env1 * env2) * (1 - norm * 0.55);
+            const phase = i / COLUMNS;
+            const envelope =
+              0.35 + 0.3 * Math.sin(time * speed * 2 * Math.PI * 1.4) ** 2;
+            target =
+              (Math.sin(phase * Math.PI * 2 * 3 + time * speed * 4.2) * 0.5 +
+                Math.sin(phase * Math.PI * 2 * 7 - time * speed * 2.6) * 0.3 +
+                Math.sin(phase * Math.PI * 2 * 1.5 + time * speed * 1.7) * 0.25) *
+              envelope *
+              1.6;
           }
-        } else if (reduced) {
-          target = 0.3 * (1 - norm * 0.5);
         }
 
-        target = Math.max(0, Math.min(1, target));
-        levels[i] += (target - levels[i]) * (target > levels[i] ? 0.4 : 0.12);
-
-        const barHeight = Math.max(height * 0.08, levels[i] * height * 0.95);
-        const hue = norm * 300;
-        context.fillStyle = `hsl(${hue.toFixed(0)} 92% 62%)`;
-        context.fillRect(i * barWidth + gap / 2, height - barHeight, barWidth - gap, barHeight);
+        target = Math.max(-1, Math.min(1, target));
+        levels[i] +=
+          (target - levels[i]) *
+          (Math.abs(target) > Math.abs(levels[i]) ? 0.5 : 0.18);
       }
+
+      const gradient = context.createLinearGradient(0, 0, width, 0);
+      gradient.addColorStop(0, "#ff5f6d");
+      gradient.addColorStop(0.18, "#ff9f43");
+      gradient.addColorStop(0.36, "#f7e463");
+      gradient.addColorStop(0.54, "#4ade80");
+      gradient.addColorStop(0.72, "#38bdf8");
+      gradient.addColorStop(0.88, "#a78bfa");
+      gradient.addColorStop(1, "#f472b6");
+
+      context.beginPath();
+      const step = width / (COLUMNS - 1);
+      for (let i = 0; i < COLUMNS; i++) {
+        const x = i * step;
+        const y = mid - levels[i] * height * 0.46;
+        if (i === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
+        }
+      }
+      context.strokeStyle = gradient;
+      context.lineWidth = Math.max(1.5, height * 0.16);
+      context.lineJoin = "round";
+      context.lineCap = "round";
+      context.shadowColor = "rgba(232, 121, 249, 0.55)";
+      context.shadowBlur = Math.max(4, height * 0.55);
+      context.stroke();
+      context.shadowBlur = 0;
     };
 
     if (reduced) {
@@ -216,7 +234,7 @@ export function PlayerBar() {
       const { isPlaying, rate } = usePlayer.getState();
       frame++;
 
-      // captureStream による実解析を試行（対応ブラウザなら常に本物のスペクトル）
+      // captureStream による実解析を試行（対応ブラウザなら常に本物の波形）
       if (!captureReady && isPlaying && (frame === 1 || frame % 120 === 0)) {
         const audio = getAudio();
         if (audio) captureReady = ensureCaptureAnalyser(audio);
@@ -280,7 +298,7 @@ export function PlayerBar() {
       {hostDiv}
       <div
         aria-hidden
-        style={{ height: "calc(8.5rem + env(safe-area-inset-bottom))" }}
+        style={{ height: "calc(8rem + env(safe-area-inset-bottom))" }}
       />
       <div
         className="animate-slide-up fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
@@ -289,7 +307,7 @@ export function PlayerBar() {
           viewTransitionName: "player-bar",
         }}
       >
-        <canvas ref={canvasRef} className="h-7 w-full" aria-hidden />
+        <canvas ref={canvasRef} className="h-4 w-full" aria-hidden />
         <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-4">
           <div className="flex items-center gap-2">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-dopa-800">
