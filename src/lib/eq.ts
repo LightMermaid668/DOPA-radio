@@ -124,3 +124,20 @@ export function getBassEnergy(): number | null {
   }
   return sum / (bins * 255);
 }
+
+/**
+ * 周波数スペクトルを target に書き込む（余りは0埋め）。
+ * サウンドグラフ未接続時は false を返す。
+ */
+export function getSpectrumData(target: Uint8Array<ArrayBuffer>): boolean {
+  if (!analyser || !analyserData) return false;
+  analyser.getByteFrequencyData(analyserData);
+  const length = Math.min(target.length, analyserData.length);
+  for (let i = 0; i < length; i++) {
+    target[i] = analyserData[i];
+  }
+  for (let i = length; i < target.length; i++) {
+    target[i] = 0;
+  }
+  return true;
+}
