@@ -25,15 +25,23 @@ git fetch --quiet origin "$BRANCH"
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"
 
-if [ "$LOCAL" = "$REMOTE" ]; then
+# コンテナが1つも存在しない場合（初回起動・全削除後）は、
+# コードが最新でもデプロイを実行する
+CONTAINERS="$(docker compose ps -aq | wc -l | tr -d ' ')"
+
+if [ "$LOCAL" = "$REMOTE" ] && [ "$CONTAINERS" != "0" ]; then
   echo "[deploy] 最新です（$LOCAL）"
   exit 0
 fi
 
-echo "[deploy] 更新を検知: $LOCAL -> $REMOTE"
-git checkout -B "$BRANCH" "origin/$BRANCH"
-git reset --hard "origin/$BRANCH"
-git clean -fd
+if [ "$LOCAL" != "$REMOTE" ]; then
+  echo "[deploy] 更新を検知: $LOCAL -> $REMOTE"
+  git checkout -B "$BRANCH" "origin/$BRANCH"
+  git reset --hard "origin/$BRANCH"
+  git clean -fd
+else
+  echo "[deploy] コードは最新ですがコンテナが未起動のためデプロイします"
+fi
 
 echo "[deploy] docker compose を再ビルドして起動します..."
 docker compose up -d --build --remove-orphans
