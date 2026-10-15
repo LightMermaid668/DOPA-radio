@@ -30,6 +30,9 @@ function s3Internal(): S3Client {
       endpoint: process.env.S3_ENDPOINT ?? "http://garage:3900",
       forcePathStyle: true,
       credentials,
+      // Garage は x-amz-sdk-checksum-algorithm 非対応のため無効化
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
   return globalForS3.__dopaS3Internal;
@@ -46,6 +49,8 @@ function s3Public(): S3Client {
           : (process.env.S3_ENDPOINT ?? "http://localhost:3900")),
       forcePathStyle: true,
       credentials,
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
   return globalForS3.__dopaS3Public;
