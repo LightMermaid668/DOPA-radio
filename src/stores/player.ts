@@ -19,6 +19,7 @@ import {
   maxPlaybackRate,
   prepareFadeIn,
   resetAudioVolume,
+  retireAudioElement,
   swapAudioRoles,
   trackSrc,
 } from "@/lib/player-audio";
@@ -80,6 +81,7 @@ type PlayerState = {
   queueAdd: (track: PlayerTrack) => void;
   togglePlay: () => void;
   next: () => void;
+  advanceToNext: () => void;
   prev: () => void;
   seekTo: (sec: number) => void;
   setRate: (rate: number) => void;
@@ -89,6 +91,7 @@ type PlayerState = {
   setChorusOnly: (value: boolean) => void;
   setCrossfade: (value: boolean) => void;
   maybeCrossfade: (time: number, duration: number) => void;
+  cancelPreload: () => void;
   setEqEnabled: (value: boolean) => void;
   applyEqPreset: (preset: string) => void;
   setEqBand: (band: EqBand, value: number) => void;
@@ -182,9 +185,7 @@ function cancelOverlap() {
   overlapNextIndex = null;
   const secondary = getSecondaryAudio();
   if (secondary) {
-    secondary.pause();
-    secondary.removeAttribute("src");
-    secondary.load();
+    retireAudioElement(secondary);
   }
 }
 
@@ -204,9 +205,7 @@ function advanceOverlap(): boolean {
 
   if (!nextTrack) {
     if (incoming) {
-      incoming.pause();
-      incoming.removeAttribute("src");
-      incoming.load();
+      retireAudioElement(incoming);
     }
     return false;
   }
@@ -214,9 +213,7 @@ function advanceOverlap(): boolean {
   if (!incoming || incoming.error || !incoming.src || incoming.paused) {
     // 先読みが失敗していたら通常の開始に任せる
     if (incoming) {
-      incoming.pause();
-      incoming.removeAttribute("src");
-      incoming.load();
+      retireAudioElement(incoming);
     }
     usePlayer.setState({ index: nextIndex, isPlaying: true, progress: 0, duration: 0 });
     startTrack(nextTrack, rate, preservesPitch, pitchSemitones);
@@ -226,8 +223,7 @@ function advanceOverlap(): boolean {
   const oldMain = getAudio();
   swapAudioRoles();
   if (oldMain) {
-    oldMain.pause();
-    oldMain.removeAttribute("src");
+    retireAudioElement(oldMain);
   }
   const newMain = getAudio();
   // EQ使用中なら新しいメイン要素をグラフに接続し直す（音質設定を維持）
@@ -559,6 +555,16 @@ async function extendWithRadio() {
   startTrack(additions[0], rate, preservesPitch, pitchSemitones);
 }
 
+/** 画面復帰・割り込み後に、再生中なら再生を再開する（iOSのジェスチャー制限にも対応） */
+export function recoverPlayback() {
+  const { isPlaying } = usePlayer.getState();
+  if (!isPlaying) return;
+  const main = getAudio();
+  if (main && main.paused && !main.ended && main.src && !main.src.includes("silence.wav")) {
+    playWithRetry(main, 0);
+  }
+}
+
 export function handleAudioError(audio: HTMLAudioElement) {
   const mediaError = audio.error;
   const { queue, index, rate, preservesPitch, pitchSemitones } = usePlayer.getState();
@@ -698,9 +704,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   next: () => {
-    // クロスフェードで次の曲が先読み再生中なら、その要素をメインに昇格する
-    if (overlapNextIndex !== null && advanceOverlap()) return;
-
+    // ユーザー操作の「次へ」は頭出し（先読みは破棄して通常開始）
+    cancelOverlap();
     const { queue, index, rate, preservesPitch, pitchSemitones, dopaMode } = get();
     const nextIndex = index + 1;
 
@@ -717,6 +722,12 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
     getAudio()?.pause();
     set({ isPlaying: false, progress: 0 });
+  },
+
+  advanceToNext: () => {
+    // 曲が終わったときの遷移: クロスフェードの先読みが再生中なら要素を昇格
+    if (overlapNextIndex !== null && advanceOverlap()) return;
+    get().next();
   },
 
   prev: () => {
@@ -810,6 +821,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     persist(CROSSFADE_KEY, String(value));
     if (!value) cancelOverlap();
     set({ crossfade: value });
+  },
+
+  cancelPreload: () => {
+    cancelOverlap();
   },
 
   maybeCrossfade: (time, duration) => {

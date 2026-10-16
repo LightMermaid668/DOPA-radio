@@ -26,10 +26,17 @@ import {
   getSecondaryAudio,
   maxPlaybackRate,
   resetAudioVolume,
+  warmUpSecondaryAudio,
 } from "@/lib/player-audio";
 import { loadSpectrogram, type Spectrogram } from "@/lib/spectrogram";
 import { cn } from "@/lib/utils";
-import { handleAudioError, usePlayer, type EqBand, type PlayerTrack } from "@/stores/player";
+import {
+  handleAudioError,
+  recoverPlayback,
+  usePlayer,
+  type EqBand,
+  type PlayerTrack,
+} from "@/stores/player";
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
 const PITCH_OPTIONS = Array.from({ length: 25 }, (_, index) => index - 12);
@@ -198,7 +205,15 @@ export function PlayerBar() {
     const isMainEvent = (event: Event) => event.currentTarget === getAudio();
 
     const handleTime = (event: Event) => {
-      if (!isMainEvent(event)) return;
+      if (!isMainEvent(event)) {
+        // 先読み要素が予定より長く鳴り続けた場合（メイン側の停止・スタール等）は
+        // 二重再生を防ぐため先読みを中断する
+        const element = event.currentTarget as HTMLAudioElement;
+        if (element === getSecondaryAudio() && element.currentTime > 6) {
+          usePlayer.getState().cancelPreload();
+        }
+        return;
+      }
       const element = event.currentTarget as HTMLAudioElement;
       const state = usePlayer.getState();
       const current = state.queue[state.index];
@@ -252,11 +267,13 @@ export function PlayerBar() {
     };
     const handlePause = (event: Event) => {
       if (!isMainEvent(event)) return;
+      // ロック画面・イヤホン操作などの一時停止でも先読みを止める（鳴り続け防止）
+      usePlayer.getState().cancelPreload();
       usePlayer.setState({ isPlaying: false });
     };
     const handleEnded = (event: Event) => {
       if (!isMainEvent(event)) return;
-      usePlayer.getState().next();
+      usePlayer.getState().advanceToNext();
     };
     const handleLoaded = (event: Event) => {
       if (!isMainEvent(event)) return;
@@ -279,6 +296,21 @@ export function PlayerBar() {
       element.addEventListener("loadedmetadata", handleLoaded);
       element.addEventListener("error", handleError);
     }
+
+    // iOS: ユーザー操作中に2つ目の要素を無音でウォームアップ（先読み再生の許可を得る）
+    const handlePointerDown = () => {
+      warmUpSecondaryAudio();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    // 画面復帰・割り込み後は、再生中なら自動でリカバリする
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      recoverPlayback();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pageshow", recoverPlayback);
+
     return () => {
       for (const element of elements) {
         element.removeEventListener("timeupdate", handleTime);
@@ -288,6 +320,9 @@ export function PlayerBar() {
         element.removeEventListener("loadedmetadata", handleLoaded);
         element.removeEventListener("error", handleError);
       }
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pageshow", recoverPlayback);
     };
   }, []);
 

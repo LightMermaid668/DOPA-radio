@@ -44,6 +44,63 @@ export function isCrossfadeSrc(src: string): boolean {
   return src.includes("/crossfade");
 }
 
+/** ウォームアップ/キープアライブ用の無音ファイル（0.05秒） */
+export const SILENT_WAV_SRC = "/silence.wav";
+
+let secondaryWarmed = false;
+
+/**
+ * iOS Safari は「ユーザー操作なしで作られた要素・一度も再生していない要素」の
+ * play() を拒否することがある。クロスフェード用の2つ目の要素を、
+ * タップなどのユーザー操作中に無音で一度再生して許可を得ておく。
+ */
+export function warmUpSecondaryAudio(): boolean {
+  if (secondaryWarmed) return true;
+  const secondary = getSecondaryAudio();
+  if (!secondary) return false;
+  // 本番の先読み再生中は邪魔しない
+  if (secondary.src && !secondary.src.includes("silence.wav")) return secondaryWarmed;
+  try {
+    if (!secondary.src) {
+      secondary.src = SILENT_WAV_SRC;
+      secondary.load();
+    }
+    void secondary
+      .play()
+      .then(() => {
+        secondaryWarmed = true;
+        // 無音を鳴らし続ける必要はない（許可を得るだけでよい）
+        try {
+          secondary.pause();
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {
+        /* 次の操作で再試行される */
+      });
+  } catch {
+    /* ignore */
+  }
+  return secondaryWarmed;
+}
+
+/**
+ * 要素を休止状態にする（再生停止 + 実ストリームの解放）。
+ * iOSのキープアライブのため、無音ファイルだけは読み込んだままにする。
+ */
+export function retireAudioElement(element: HTMLAudioElement) {
+  try {
+    element.pause();
+  } catch {
+    /* ignore */
+  }
+  if (!element.src.includes("silence.wav")) {
+    element.src = SILENT_WAV_SRC;
+    element.load();
+  }
+}
+
 export function isIos(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
