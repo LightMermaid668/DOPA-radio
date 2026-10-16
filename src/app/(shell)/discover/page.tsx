@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 
-import { AppHeader } from "@/components/app-header";
 import { DiscoverView } from "@/components/discover/discover-view";
 import { auth } from "@/lib/auth";
 import { getDiscoverData } from "@/lib/discover";
@@ -14,9 +13,8 @@ export default async function DiscoverPage() {
   const discover = await getDiscoverData(session?.user ?? null);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
-      <AppHeader />
-      <section className="pb-6">
+    <>
+      <section className="pb-5">
         <h1 className="text-2xl font-black">ディスカバー</h1>
         <p className="mt-1 text-sm text-zinc-400">
           みんなが公開している曲とプレイリスト
@@ -27,6 +25,6 @@ export default async function DiscoverPage() {
         playlists={discover.playlists}
         loggedIn={Boolean(session)}
       />
-    </main>
+    </>
   );
 }

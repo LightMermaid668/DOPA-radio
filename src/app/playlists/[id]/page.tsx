@@ -24,7 +24,7 @@ export default async function PlaylistPage({
   params: Promise<{ id: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) redirect("/login?redirect=%2Fhome%3Ftab%3Dplaylists");
+  if (!session) redirect("/login?redirect=%2Fplaylists");
 
   const { id } = await params;
   const playlist = await db.query.playlists.findFirst({ where: eq(playlists.id, id) });
@@ -88,7 +88,7 @@ export default async function PlaylistPage({
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
       <header className="flex items-center justify-between py-6">
         <Link
-          href="/home?tab=playlists"
+          href="/playlists"
           className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200"
         >
           <ArrowLeft className="size-4" />

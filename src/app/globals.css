@@ -40,6 +40,21 @@
   color: transparent;
 }
 
+/* レインボーをゆっくり流す（ロゴ・アクセント用） */
+@keyframes rainbow-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@utility animate-rainbow {
+  background-size: 200% 100%;
+  animation: rainbow-pan 6s linear infinite;
+}
+
 html {
   color-scheme: dark;
 }
@@ -152,6 +167,86 @@ main {
   from {
     opacity: 0;
     transform: translateY(10px);
+  }
+}
+
+/* ---- シェル（サイドバー/タブバー/トップバー） ---- */
+
+:root {
+  --dopa-tabbar-offset: 0px;
+}
+
+@media (max-width: 767px) {
+  body.dopa-shell-active {
+    --dopa-tabbar-offset: 4rem;
+  }
+}
+
+.app-sidebar {
+  view-transition-name: app-sidebar;
+}
+
+.app-tabbar {
+  view-transition-name: app-tabbar;
+}
+
+.app-topbar {
+  view-transition-name: app-topbar;
+}
+
+/* シェル部分は切り替え中もそのまま見せる（スナップショットのチラつき防止） */
+::view-transition-old(app-sidebar),
+::view-transition-new(app-sidebar),
+::view-transition-old(app-tabbar),
+::view-transition-new(app-tabbar),
+::view-transition-old(app-topbar),
+::view-transition-new(app-topbar) {
+  animation: none;
+}
+
+/* ---- タブ移動の水平スライド（View Transitions） ---- */
+
+html[data-nav-direction="forward"] ::view-transition-old(root) {
+  animation: vt-slide-out-left 0.24s ease-in both;
+}
+
+html[data-nav-direction="forward"] ::view-transition-new(root) {
+  animation: vt-slide-in-right 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-nav-direction="back"] ::view-transition-old(root) {
+  animation: vt-slide-out-right 0.24s ease-in both;
+}
+
+html[data-nav-direction="back"] ::view-transition-new(root) {
+  animation: vt-slide-in-left 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes vt-slide-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(-14%) scale(0.99);
+  }
+}
+
+@keyframes vt-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(18%);
+  }
+}
+
+@keyframes vt-slide-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(14%) scale(0.99);
+  }
+}
+
+@keyframes vt-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-18%);
   }
 }
 

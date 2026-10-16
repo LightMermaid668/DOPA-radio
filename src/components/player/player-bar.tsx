@@ -498,11 +498,15 @@ export function PlayerBar() {
       {hostDiv}
       <div
         aria-hidden
-        style={{ height: "calc(8rem + env(safe-area-inset-bottom))" }}
+        style={{
+          height:
+            "calc(8rem + env(safe-area-inset-bottom) + var(--dopa-tabbar-offset, 0px))",
+        }}
       />
       <div
-        className="animate-slide-up fixed inset-x-0 bottom-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
+        className="animate-slide-up fixed inset-x-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
         style={{
+          bottom: "var(--dopa-tabbar-offset, 0px)",
           paddingBottom: "env(safe-area-inset-bottom)",
           viewTransitionName: "player-bar",
         }}
@@ -565,7 +569,7 @@ export function PlayerBar() {
               <button
                 type="button"
                 onClick={togglePlay}
-                className="bg-rainbow flex size-10 items-center justify-center rounded-full text-dopa-950 hover:brightness-110"
+                className="bg-rainbow animate-rainbow flex size-10 items-center justify-center rounded-full text-dopa-950 hover:brightness-110"
                 aria-label={isPlaying ? "一時停止" : "再生"}
               >
                 {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}

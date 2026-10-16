@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { count, desc, eq } from "drizzle-orm";
 
-import { AppHeader } from "@/components/app-header";
 import { HomeView, type HomePlaylist, type HomeTab, type SavedTrackView } from "@/components/home/home-view";
 import type { LibraryTrack } from "@/components/library/track-list";
 import { db } from "@/db";
@@ -122,17 +121,14 @@ export default async function HomePage({
   const discover = await getDiscoverData(user);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
-      <AppHeader />
-      <HomeView
-        tracks={libraryTracks}
-        playlists={homePlaylists}
-        savedTracks={savedTracksView}
-        userId={user.id}
-        userName={user.name}
-        discover={discover}
-        initialTab={initialTab}
-      />
-    </main>
+    <HomeView
+      tracks={libraryTracks}
+      playlists={homePlaylists}
+      savedTracks={savedTracksView}
+      userId={user.id}
+      userName={user.name}
+      discover={discover}
+      initialTab={initialTab}
+    />
   );
 }

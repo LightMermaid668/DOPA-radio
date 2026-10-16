@@ -258,7 +258,7 @@ export function HomeView({
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "library"
-              ? "bg-rainbow border-transparent text-dopa-950"
+              ? "bg-rainbow animate-rainbow border-transparent text-dopa-950"
               : "border-dopa-700 bg-dopa-900 text-zinc-300 hover:bg-dopa-800",
           )}
         >
@@ -271,7 +271,7 @@ export function HomeView({
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "playlists"
-              ? "bg-rainbow border-transparent text-dopa-950"
+              ? "bg-rainbow animate-rainbow border-transparent text-dopa-950"
               : "border-dopa-700 bg-dopa-900 text-zinc-300 hover:bg-dopa-800",
           )}
         >
@@ -284,7 +284,7 @@ export function HomeView({
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-bold transition-colors sm:text-sm",
             tab === "discover"
-              ? "bg-rainbow border-transparent text-dopa-950"
+              ? "bg-rainbow animate-rainbow border-transparent text-dopa-950"
               : "border-dopa-700 bg-dopa-900 text-zinc-300 hover:bg-dopa-800",
           )}
         >

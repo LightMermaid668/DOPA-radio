@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 
-import { AppHeader } from "@/components/app-header";
 import { TrackList, type LibraryTrack } from "@/components/library/track-list";
 import { db } from "@/db";
 import { tracks } from "@/db/schema";
@@ -59,15 +58,13 @@ export default async function LibraryPage() {
   }));
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6">
-      <AppHeader />
-
-      <section className="pb-6">
+    <>
+      <section className="pb-5">
         <h1 className="mb-1 text-2xl font-black">ライブラリ</h1>
         <p className="text-sm text-zinc-400">自分の曲を管理して、そのまま再生できます。</p>
       </section>
 
       <TrackList tracks={libraryTracks} />
-    </main>
+    </>
   );
 }
