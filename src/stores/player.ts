@@ -30,6 +30,7 @@ const PITCH_SEMITONES_KEY = "dopa:pitch-semitones";
 const DOPA_MODE_KEY = "dopa:dopa-mode";
 const CHORUS_ONLY_KEY = "dopa:chorus-only";
 const CROSSFADE_KEY = "dopa:crossfade";
+const REPEAT_MODE_KEY = "dopa:repeat-mode";
 const EQ_ENABLED_KEY = "dopa:eq-enabled";
 const EQ_PRESET_KEY = "dopa:eq-preset";
 const EQ_BASS_KEY = "dopa:eq-bass";
@@ -55,6 +56,8 @@ export type PlayerTrack = {
 
 export type EqBand = "bass" | "mid" | "treble";
 
+export type RepeatMode = "off" | "one" | "all";
+
 type PlayerState = {
   queue: PlayerTrack[];
   index: number;
@@ -69,6 +72,7 @@ type PlayerState = {
   dopaMode: boolean;
   chorusOnly: boolean;
   crossfade: boolean;
+  repeatMode: RepeatMode;
   eqEnabled: boolean;
   eqPreset: string;
   eqBass: number;
@@ -92,6 +96,8 @@ type PlayerState = {
   setCrossfade: (value: boolean) => void;
   maybeCrossfade: (time: number, duration: number) => void;
   cancelPreload: () => void;
+  setRepeatMode: (mode: RepeatMode) => void;
+  cycleRepeatMode: () => void;
   setEqEnabled: (value: boolean) => void;
   applyEqPreset: (preset: string) => void;
   setEqBand: (band: EqBand, value: number) => void;
@@ -243,8 +249,8 @@ function advanceOverlap(): boolean {
 
 /** ドパモード: キュー残りが少なくなったら先読みで補充しておく（バックグラウンドでも繋がるように） */
 async function maybePrefetchRadio() {
-  const { dopaMode, queue, index } = usePlayer.getState();
-  if (!dopaMode || radioFetching) return;
+  const { dopaMode, queue, index, repeatMode } = usePlayer.getState();
+  if (!dopaMode || repeatMode !== "off" || radioFetching) return;
   if (Date.now() < radioCooldownUntil) return;
   if (index < queue.length - 2) return;
 
@@ -267,6 +273,38 @@ async function maybePrefetchRadio() {
   } finally {
     radioFetching = false;
   }
+}
+
+/** 1曲リピート: 現在の曲をもう一度最初（サビだけ中はサビ頭）から再生する */
+function replayCurrent() {
+  const { queue, index, chorusOnly } = usePlayer.getState();
+  const track = queue[index];
+  const audio = getAudio();
+  if (!track || !audio) return;
+
+  cancelOverlap();
+  let target = 0;
+  if (
+    chorusOnly &&
+    track.kind === "upload" &&
+    track.chorusStartSec != null &&
+    track.chorusStartSec > 1
+  ) {
+    target = track.chorusStartSec;
+  }
+  try {
+    audio.currentTime = target;
+  } catch {
+    /* ignore */
+  }
+  resetAudioVolume();
+  usePlayer.setState({
+    progress: target,
+    isPlaying: true,
+    playbackError: null,
+    playbackNotice: null,
+  });
+  playWithRetry(audio, 0);
 }
 
 async function ensurePitchVariant(
@@ -643,6 +681,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   dopaMode: false,
   chorusOnly: false,
   crossfade: true,
+  repeatMode: "off",
   eqEnabled: false,
   eqPreset: "flat",
   eqBass: 0,
@@ -706,12 +745,19 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   next: () => {
     // ユーザー操作の「次へ」は頭出し（先読みは破棄して通常開始）
     cancelOverlap();
-    const { queue, index, rate, preservesPitch, pitchSemitones, dopaMode } = get();
+    const { queue, index, rate, preservesPitch, pitchSemitones, dopaMode, repeatMode } = get();
     const nextIndex = index + 1;
 
     if (nextIndex < queue.length) {
       set({ index: nextIndex, isPlaying: true, progress: 0, duration: 0 });
       startTrack(queue[nextIndex], rate, preservesPitch, pitchSemitones);
+      return;
+    }
+
+    // リスト最後: 全曲リピートなら先頭へ戻る
+    if (repeatMode === "all" && queue.length > 0) {
+      set({ index: 0, isPlaying: true, progress: 0, duration: 0 });
+      startTrack(queue[0], rate, preservesPitch, pitchSemitones);
       return;
     }
 
@@ -725,7 +771,12 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   advanceToNext: () => {
-    // 曲が終わったときの遷移: クロスフェードの先読みが再生中なら要素を昇格
+    // 曲が終わったときの遷移: 1曲リピートなら同じ曲を再生し直す
+    if (get().repeatMode === "one") {
+      replayCurrent();
+      return;
+    }
+    // クロスフェードの先読みが再生中なら要素を昇格
     if (overlapNextIndex !== null && advanceOverlap()) return;
     get().next();
   },
@@ -827,11 +878,25 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     cancelOverlap();
   },
 
+  setRepeatMode: (mode) => {
+    persist(REPEAT_MODE_KEY, mode);
+    if (mode === "one") cancelOverlap();
+    set({ repeatMode: mode });
+  },
+
+  cycleRepeatMode: () => {
+    const order: RepeatMode[] = ["off", "all", "one"];
+    const current = get().repeatMode;
+    const index = order.indexOf(current);
+    get().setRepeatMode(order[(index + 1) % order.length]);
+  },
+
   maybeCrossfade: (time, duration) => {
     const state = get();
     if (!state.isPlaying) return;
     // ドパモード: キュー残りが少なくなったら先読みで補充しておく
     if (state.dopaMode) void maybePrefetchRadio();
+    if (state.repeatMode === "one") return;
     if (!state.crossfade || state.chorusOnly) return;
     if (overlapNextIndex !== null) return;
     if (!duration || !Number.isFinite(duration)) return;
@@ -839,8 +904,18 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
     const { queue, index, rate, preservesPitch } = state;
     const current = queue[index];
-    const nextTrack = queue[index + 1];
-    if (!current || !nextTrack || current.kind !== "upload") return;
+    if (!current || current.kind !== "upload") return;
+
+    // 次の曲（全曲リピートで最後なら先頭へ）
+    const directNext = queue[index + 1];
+    const targetIndex = directNext
+      ? index + 1
+      : state.repeatMode === "all" && queue.length > 1
+        ? 0
+        : -1;
+    if (targetIndex === -1) return;
+    const nextTrack = queue[targetIndex];
+    if (!nextTrack) return;
 
     const main = getAudio();
     if (!main || !isCrossfadeSrc(main.src)) return;
@@ -854,21 +929,21 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         : (nextTrack.previewUrl ?? null);
     if (!nextSrc) return;
 
-    overlapNextIndex = index + 1;
+    overlapNextIndex = targetIndex;
     secondary.src = nextSrc;
     secondary.load();
     applyPlaybackSettings(secondary, { rate, preservesPitch });
 
     const clearOnError = () => {
       secondary.removeEventListener("error", clearOnError);
-      if (overlapNextIndex === index + 1) cancelOverlap();
+      if (overlapNextIndex === targetIndex) cancelOverlap();
     };
     secondary.addEventListener("error", clearOnError);
 
     const startSecondary = (attempt: number) => {
       secondary.play().catch((error: unknown) => {
         const name = error instanceof Error ? error.name : "";
-        if (overlapNextIndex !== index + 1) return;
+        if (overlapNextIndex !== targetIndex) return;
         if (attempt < 1 && (name === "AbortError" || name === "NotSupportedError")) {
           const retry = () => {
             secondary.removeEventListener("canplay", retry);
@@ -981,6 +1056,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const dopaMode = localStorage.getItem(DOPA_MODE_KEY) === "true";
     const chorusOnly = localStorage.getItem(CHORUS_ONLY_KEY) === "true";
     const crossfade = localStorage.getItem(CROSSFADE_KEY) !== "false";
+    const storedRepeat = localStorage.getItem(REPEAT_MODE_KEY);
+    const repeatMode: RepeatMode =
+      storedRepeat === "one" || storedRepeat === "all" ? storedRepeat : "off";
     const eqEnabled = localStorage.getItem(EQ_ENABLED_KEY) === "true";
     const eqPreset = localStorage.getItem(EQ_PRESET_KEY) ?? "flat";
     const eqBass = Number(localStorage.getItem(EQ_BASS_KEY) ?? "0") || 0;
@@ -998,6 +1076,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       dopaMode,
       chorusOnly,
       crossfade,
+      repeatMode,
       eqEnabled,
       eqPreset,
       eqBass,

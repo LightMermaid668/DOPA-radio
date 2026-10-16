@@ -10,6 +10,8 @@ import {
   Pause,
   Play,
   Radio,
+  Repeat,
+  Repeat1,
   Scissors,
   Shuffle,
   SkipBack,
@@ -108,6 +110,8 @@ export function PlayerBar() {
   const setChorusOnly = usePlayer((s) => s.setChorusOnly);
   const crossfade = usePlayer((s) => s.crossfade);
   const setCrossfade = usePlayer((s) => s.setCrossfade);
+  const repeatMode = usePlayer((s) => s.repeatMode);
+  const cycleRepeatMode = usePlayer((s) => s.cycleRepeatMode);
   const eqEnabled = usePlayer((s) => s.eqEnabled);
   const eqPreset = usePlayer((s) => s.eqPreset);
   const eqBass = usePlayer((s) => s.eqBass);
@@ -243,9 +247,13 @@ export function PlayerBar() {
         if (state.isPlaying && !element.paused && remaining <= 0.08) {
           if (chorusGuardRef.current !== key) {
             chorusGuardRef.current = key;
-            state.next();
+            state.advanceToNext();
             return;
           }
+        }
+        // 巻き戻した場合はガードを解除して再度自動送りできるようにする
+        if (remaining > 1.2 && chorusGuardRef.current === key) {
+          chorusGuardRef.current = null;
         }
       }
 
@@ -933,6 +941,28 @@ export function PlayerBar() {
                 </button>
                 <button
                   type="button"
+                  onClick={cycleRepeatMode}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold",
+                    repeatMode !== "off"
+                      ? "border-accent text-accent"
+                      : "border-dopa-700 text-zinc-200 hover:bg-dopa-800",
+                  )}
+                  aria-label="リピート設定"
+                >
+                  {repeatMode === "one" ? (
+                    <Repeat1 className="size-3.5" />
+                  ) : (
+                    <Repeat className="size-3.5" />
+                  )}
+                  {repeatMode === "off"
+                    ? "リピートなし"
+                    : repeatMode === "one"
+                      ? "1曲リピート"
+                      : "全曲リピート"}
+                </button>
+                <button
+                  type="button"
                   onClick={() => setQueueOpen(false)}
                   className="flex size-8 items-center justify-center rounded-full text-zinc-400 hover:bg-dopa-800"
                   aria-label="閉じる"
@@ -942,13 +972,18 @@ export function PlayerBar() {
               </div>
             </div>
 
-            {dopaMode || chorusOnly || crossfade ? (
+            {dopaMode || chorusOnly || crossfade || repeatMode !== "off" ? (
               <p className="px-5 pb-2 text-[11px] text-zinc-500">
                 {dopaMode ? "キューが終わると似てる曲を自動追加。" : ""}
                 {chorusOnly ? "サビ範囲が設定された曲はサビの部分だけ再生します。" : ""}
                 {crossfade && !chorusOnly
                   ? "曲の終わり3秒前から次の曲を重ねて途切れなくつなぎます（iPhoneでも動作・サビだけ中はOFF）。"
                   : ""}
+                {repeatMode === "one"
+                  ? "1曲リピート: 曲が終わると同じ曲を最初から再生します。"
+                  : repeatMode === "all"
+                    ? "全曲リピート: リストの最後まで行ったら先頭へ戻ります。"
+                    : ""}
               </p>
             ) : null}
 
