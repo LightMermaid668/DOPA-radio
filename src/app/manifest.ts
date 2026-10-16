@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+import { PWA_ANY_ICONS, PWA_MASKABLE_ICONS } from "@/lib/pwa-icons";
+
 // PWA のアプリID（UUID）。変更すると別アプリ扱いになり、再インストールで新しいアイデンティティになる
 const APP_ID = "8f2d5c1a-64b7-4e93-9a0f-3d6e7b21c845";
 
@@ -21,23 +23,6 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#0a0a0c",
     lang: "ja",
     orientation: "portrait",
-    icons: [
-      {
-        src: "/icons/icon-192.png",
-        sizes: "192x192",
-        type: "image/png",
-      },
-      {
-        src: "/icons/icon-512.png",
-        sizes: "512x512",
-        type: "image/png",
-      },
-      {
-        src: "/icons/icon-maskable-512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "maskable",
-      },
-    ],
+    icons: [...PWA_ANY_ICONS, ...PWA_MASKABLE_ICONS],
   };
 }
