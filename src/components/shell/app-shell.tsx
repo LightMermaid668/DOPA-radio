@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Settings, UploadCloud } from "lucide-react";
 
 import { Logo } from "@/components/logo";
@@ -20,12 +20,41 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const activeIndex = navIndexForPath(pathname);
+  const mainRef = useRef<HTMLElement>(null);
+  const previousPathRef = useRef(pathname);
 
   // タブバー分だけプレイヤーを持ち上げる（CSS変数で伝える）
   useEffect(() => {
     document.body.classList.add("dopa-shell-active");
     return () => document.body.classList.remove("dopa-shell-active");
   }, []);
+
+  // View Transitions非対応ブラウザ用: コンテンツ全体をスライドインさせる
+  useEffect(() => {
+    const previousPath = previousPathRef.current;
+    previousPathRef.current = pathname;
+    if (previousPath === pathname || typeof document === "undefined") return;
+    const supportsViewTransition =
+      typeof (document as Document & { startViewTransition?: unknown })
+        .startViewTransition === "function";
+    if (supportsViewTransition) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const previousIndex = navIndexForPath(previousPath);
+    const nextIndex = navIndexForPath(pathname);
+    if (previousIndex === -1 || nextIndex === -1 || previousIndex === nextIndex) return;
+
+    const element = mainRef.current;
+    if (!element) return;
+    const fromRight = nextIndex > previousIndex;
+    element.animate(
+      [
+        { transform: `translateX(${fromRight ? 100 : -100}%)`, opacity: 0.9 },
+        { transform: "none", opacity: 1 },
+      ],
+      { duration: 340, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
+  }, [pathname]);
 
   return (
     <div className="min-h-dvh w-full">
@@ -100,7 +129,10 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-3xl flex-1 px-5 pb-56 md:px-8 md:pb-40">
+        <main
+          ref={mainRef}
+          className="mx-auto w-full max-w-3xl flex-1 px-5 pb-56 md:px-8 md:pb-40"
+        >
           {children}
         </main>
       </div>

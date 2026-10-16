@@ -205,48 +205,49 @@ main {
 }
 
 /* ---- タブ移動の水平スライド（View Transitions） ---- */
+/* コンテンツ全体が画面幅ぶんスライドする。シェル（メニュー等）はnamed要素なので動かない */
 
 html[data-nav-direction="forward"] ::view-transition-old(root) {
-  animation: vt-slide-out-left 0.24s ease-in both;
+  animation: vt-slide-out-left 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 html[data-nav-direction="forward"] ::view-transition-new(root) {
-  animation: vt-slide-in-right 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: vt-slide-in-right 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 html[data-nav-direction="back"] ::view-transition-old(root) {
-  animation: vt-slide-out-right 0.24s ease-in both;
+  animation: vt-slide-out-right 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 html[data-nav-direction="back"] ::view-transition-new(root) {
-  animation: vt-slide-in-left 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: vt-slide-in-left 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes vt-slide-out-left {
   to {
     opacity: 0;
-    transform: translateX(-14%) scale(0.99);
+    transform: translateX(-30%);
   }
 }
 
 @keyframes vt-slide-in-right {
   from {
-    opacity: 0;
-    transform: translateX(18%);
+    opacity: 0.9;
+    transform: translateX(100%);
   }
 }
 
 @keyframes vt-slide-out-right {
   to {
     opacity: 0;
-    transform: translateX(14%) scale(0.99);
+    transform: translateX(30%);
   }
 }
 
 @keyframes vt-slide-in-left {
   from {
-    opacity: 0;
-    transform: translateX(-18%);
+    opacity: 0.9;
+    transform: translateX(-100%);
   }
 }
 
