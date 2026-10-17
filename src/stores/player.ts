@@ -11,7 +11,7 @@ import {
   MAX_BOOST,
   MIN_BOOST,
   resetAiMix,
-  startAiMix,
+  startDjMix,
   STUDIO_DEFAULTS,
   studioGraphReady,
   type StudioSettings,
@@ -29,6 +29,11 @@ import {
   swapAudioRoles,
   trackSrc,
 } from "@/lib/player-audio";
+import {
+  findBeatAlignOffset,
+  getCachedSpectrogram,
+  spectrogramTarget,
+} from "@/lib/spectrogram";
 
 const RATE_KEY = "dopa:playback-rate";
 const PITCH_KEY = "dopa:preserves-pitch";
@@ -270,6 +275,8 @@ function advanceOverlap(): boolean {
   const newMain = getAudio();
   if (newMain) {
     resetAiMix(newMain);
+    // DJミックスで変えたテンポ（キーロック）をユーザー設定に戻す
+    applyPlaybackSettings(newMain, { rate, preservesPitch });
   }
   // EQ使用中なら新しいメイン要素をグラフに接続し直す（音質設定を維持）
   if (newMain && eqGraphReady()) {
@@ -322,6 +329,7 @@ function replayCurrent() {
   if (!track || !audio) return;
 
   cancelOverlap();
+  resetAiMix(audio);
   let target = 0;
   if (
     chorusOnly &&
@@ -487,6 +495,8 @@ function startTrack(
 
   const audio = getAudio();
   if (!audio) return;
+  // 前のミックスのフィルター/ゲインが残っていても必ず素の状態から始める
+  resetAiMix(audio);
 
   let src: string;
   if (track.localSrc) {
@@ -1046,11 +1056,43 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       startAt = nextTrack.chorusStartSec;
     }
 
+    // DJミックス: BPMが分かればビート同期（テンポ合わせ＋位相合わせ）も行う
+    let mixRate = rate;
+    let startPosition = startAt;
+    if (state.aiMix) {
+      const currentTarget = spectrogramTarget(current, 0);
+      const nextTarget = spectrogramTarget(nextTrack, 0);
+      const specA = currentTarget ? getCachedSpectrogram(currentTarget.key) : null;
+      const specB = nextTarget ? getCachedSpectrogram(nextTarget.key) : null;
+      const bpmA = specA?.bpm ?? null;
+      const bpmB = specB?.bpm ?? null;
+      if (bpmA && bpmB && specA && specB) {
+        const ratio = bpmA / bpmB;
+        if (ratio >= 0.9 && ratio <= 1.12) {
+          mixRate = Math.min(maxPlaybackRate(), Math.max(0.5, rate * ratio));
+          // ビート整列: 2曲のオンセットを直接照合して開始位置を微調整（0〜1拍）
+          const alignOffset = findBeatAlignOffset(
+            specA,
+            specB,
+            time,
+            startPosition,
+            mixRate / rate,
+          );
+          if (alignOffset != null) {
+            startPosition += alignOffset;
+          }
+        }
+      }
+    }
+
     overlapNextIndex = targetIndex;
-    overlapStartPosition = startAt;
+    overlapStartPosition = startPosition;
     secondary.src = nextSrc;
     secondary.load();
-    applyPlaybackSettings(secondary, { rate, preservesPitch });
+    applyPlaybackSettings(
+      secondary,
+      state.aiMix ? { rate: mixRate, preservesPitch: true } : { rate, preservesPitch },
+    );
 
     const clearOnError = () => {
       secondary.removeEventListener("error", clearOnError);
@@ -1082,16 +1124,16 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const begin = () => {
       startSecondary(0);
       if (state.aiMix) {
-        startAiMix(main, secondary, overlapSec, { fadeIncoming: startAt === 0 });
+        startDjMix(main, secondary, overlapSec, { fadeIncoming: startAt === 0 });
       }
     };
 
-    if (startAt > 0) {
+    if (startPosition > 0) {
       const onMeta = () => {
         secondary.removeEventListener("loadedmetadata", onMeta);
         if (overlapNextIndex !== targetIndex) return;
         try {
-          secondary.currentTime = startAt;
+          secondary.currentTime = startPosition;
         } catch {
           /* ignore */
         }

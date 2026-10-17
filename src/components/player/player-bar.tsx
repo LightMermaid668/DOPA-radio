@@ -31,7 +31,7 @@ import {
   warmUpSecondaryAudio,
 } from "@/lib/player-audio";
 import { getDesktop, isDesktopApp } from "@/lib/desktop";
-import { loadSpectrogram, type Spectrogram } from "@/lib/spectrogram";
+import { loadSpectrogram, spectrogramTarget, type Spectrogram } from "@/lib/spectrogram";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
 import {
@@ -40,7 +40,6 @@ import {
   recoverPlayback,
   usePlayer,
   type EqBand,
-  type PlayerTrack,
 } from "@/stores/player";
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
@@ -102,32 +101,6 @@ function StudioSlider({
       />
     </div>
   );
-}
-
-/**
- * スペクトル解析の対象（音声ファイルのURL）を決める。
- * マイクは使わず、再生している音源そのものをデコードして解析する。
- */
-function analysisTarget(
-  track: PlayerTrack,
-  semitones: number,
-): { key: string; url: string } | null {
-  if (track.localSrc) {
-    return { key: `local:${track.localSrc}`, url: track.localSrc };
-  }
-  if (track.kind === "upload") {
-    if (semitones !== 0) {
-      return {
-        key: `pitch:${track.id}:${semitones}`,
-        url: `/api/tracks/${track.id}/pitch/${semitones}`,
-      };
-    }
-    return { key: `track:${track.id}`, url: `/api/tracks/${track.id}/file` };
-  }
-  if (track.kind === "apple" && track.previewUrl) {
-    return { key: `apple:${track.id}`, url: track.previewUrl };
-  }
-  return null;
 }
 
 export function PlayerBar() {
@@ -217,7 +190,7 @@ export function PlayerBar() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!track) return;
-    const target = analysisTarget(track, pitchSemitones);
+    const target = spectrogramTarget(track, pitchSemitones);
     spectrogramRef.current = null;
     if (!target) {
       spectroStatusRef.current = "unavailable";
@@ -233,7 +206,7 @@ export function PlayerBar() {
       const state = usePlayer.getState();
       const nextTrack = state.queue[state.index + 1];
       if (nextTrack) {
-        const nextTarget = analysisTarget(nextTrack, state.pitchSemitones);
+        const nextTarget = spectrogramTarget(nextTrack, state.pitchSemitones);
         if (nextTarget) void loadSpectrogram(nextTarget.key, nextTarget.url);
       }
     });
@@ -864,7 +837,7 @@ export function PlayerBar() {
                             />
                           </label>
                           <label className="flex cursor-pointer items-center justify-between text-[11px] text-zinc-300">
-                            AIミックス（DJ風に混ぜる）
+                            本格DJミックス（ビート同期＋ベーススワップ）
                             <input
                               type="checkbox"
                               checked={aiMix}
@@ -874,7 +847,7 @@ export function PlayerBar() {
                           </label>
                         </div>
                         <p className="mt-2 px-1 text-[10px] leading-tight text-zinc-500">
-                          AIミックスはクロスフェード中にフィルターを回してDJ風につなぎます（サビだけ中も使用可）。デスクトップアプリ専用です。※モノラル音源はボーカル除去100%で無音になります
+                          DJミックスはクロスフェード中にテンポを合わせ（キーロック）、ベースを入れ替えながらイコールパワーで混ぜます（サビだけ中も使用可）。デスクトップアプリ専用です。※モノラル音源はボーカル除去100%で無音になります
                         </p>
                       </>
                     ) : null}

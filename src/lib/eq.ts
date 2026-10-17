@@ -295,10 +295,10 @@ export function studioGraphReady(): boolean {
 }
 
 /**
- * AIミックス: DJ風にフィルターを回しながら2曲を混ぜる。
- * 出ていく曲はこもりながら消え、入ってくる曲は細い音から全帯域へ開く。
+ * 本格DJミックス: イコールパワーカーブで混ぜながら、
+ * 中間でベースを入れ替える（ベーススワップ）。出ていく曲は終盤こもらせて抜ける。
  */
-export function startAiMix(
+export function startDjMix(
   outgoing: HTMLAudioElement,
   incoming: HTMLAudioElement,
   durationSec: number,
@@ -310,27 +310,48 @@ export function startAiMix(
   if (!out || !inc) return false;
 
   const now = audioContext.currentTime;
-  const end = now + Math.max(0.5, durationSec);
+  const total = Math.max(1, durationSec);
+  const end = now + total;
+  const swapAt = now + total * 0.5;
+  const swapEnd = now + total * 0.68;
 
+  // 出ていく曲: イコールパワー（cosカーブ）でフェード
+  const outCurve = new Float32Array(64);
+  for (let i = 0; i < outCurve.length; i++) {
+    outCurve[i] = Math.cos((Math.PI / 2) * (i / (outCurve.length - 1)));
+  }
+  out.gain.gain.cancelScheduledValues(now);
+  out.gain.gain.setValueCurveAtTime(outCurve, now, total);
+
+  // 終盤はこもらせて抜ける（上品な終わり方）
   out.lowpass.frequency.cancelScheduledValues(now);
   out.lowpass.frequency.setValueAtTime(20000, now);
-  out.lowpass.frequency.exponentialRampToValueAtTime(400, end);
+  out.lowpass.frequency.setValueAtTime(20000, now + total * 0.68);
+  out.lowpass.frequency.exponentialRampToValueAtTime(6000, end);
+
+  // ベーススワップ: 出ていく曲の中低域を抜き、入ってくる曲に渡す
   out.highpass.frequency.cancelScheduledValues(now);
   out.highpass.frequency.setValueAtTime(20, now);
-  out.gain.gain.cancelScheduledValues(now);
-  out.gain.gain.setValueAtTime(1, now);
-  out.gain.gain.linearRampToValueAtTime(0, end);
+  out.highpass.frequency.setValueAtTime(20, swapAt);
+  out.highpass.frequency.exponentialRampToValueAtTime(220, swapEnd);
 
   inc.highpass.frequency.cancelScheduledValues(now);
-  inc.highpass.frequency.setValueAtTime(900, now);
-  inc.highpass.frequency.exponentialRampToValueAtTime(30, end);
+  inc.highpass.frequency.setValueAtTime(220, now);
+  inc.highpass.frequency.setValueAtTime(220, swapAt);
+  inc.highpass.frequency.exponentialRampToValueAtTime(20, swapEnd);
+
   inc.lowpass.frequency.cancelScheduledValues(now);
   inc.lowpass.frequency.setValueAtTime(20000, now);
+
+  // 入ってくる曲のゲイン（焼き込みフェードインが無い開始位置のときだけ補う）
   inc.gain.gain.cancelScheduledValues(now);
   if (options?.fadeIncoming === false) {
-    // 焼き込みフェードインが無い開始位置（サビ頭など）でも急に出ないように
-    inc.gain.gain.setValueAtTime(0.05, now);
-    inc.gain.gain.linearRampToValueAtTime(1, end);
+    const inCurve = new Float32Array(64);
+    for (let i = 0; i < inCurve.length; i++) {
+      const sin = Math.sin((Math.PI / 2) * (i / (inCurve.length - 1)));
+      inCurve[i] = Math.min(1, 0.08 + sin * 0.92);
+    }
+    inc.gain.gain.setValueCurveAtTime(inCurve, now, total);
   } else {
     inc.gain.gain.setValueAtTime(1, now);
   }
