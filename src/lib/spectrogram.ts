@@ -37,7 +37,10 @@ export async function loadSpectrogram(
   const existing = cache.get(key);
   if (existing) return existing;
   try {
-    const res = await fetch(url, { credentials: "include" });
+    const res = await fetch(url, {
+      // ローカルファイル（dopa-local://）は資格情報なしで取得する
+      credentials: url.startsWith("dopa-local:") ? "omit" : "include",
+    });
     if (!res.ok) return null;
     const buffer = await res.arrayBuffer();
     const context = getDecodeContext();

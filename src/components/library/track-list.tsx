@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 
 import { ChorusEditor } from "@/components/library/chorus-editor";
+import { TracksDownloadButton } from "@/components/desktop/download-buttons";
 import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { confirmDialog } from "@/components/ui/dialog";
@@ -111,6 +112,9 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
   }, [menu]);
 
   const readyTracks = tracks.filter((track) => track.status === "ready");
+  const selectedReadyTracks = tracks.filter(
+    (track) => selected.has(track.id) && track.status === "ready",
+  );
 
   function openMenu(track: LibraryTrack, button: HTMLButtonElement) {
     const rect = button.getBoundingClientRect();
@@ -347,6 +351,14 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
           >
             {bulkBusy ? "適用中…" : "適用"}
           </Button>
+          <TracksDownloadButton
+            items={selectedReadyTracks.map((track) => ({
+              id: track.id,
+              title: track.title,
+              artist: track.artist,
+            }))}
+            label={`DL（${selectedReadyTracks.length}）`}
+          />
           <button
             type="button"
             onClick={selectAll}

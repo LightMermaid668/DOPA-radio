@@ -7,14 +7,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   ChevronRight,
+  Download,
   LogOut,
   Music2,
   Settings,
   UploadCloud,
   UserRound,
+  type LucideIcon,
 } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
+import { isDesktopApp } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 
 export type ShellUser = {
@@ -28,7 +31,7 @@ type MenuItem = {
   href: string;
   label: string;
   hint: string;
-  icon: typeof Music2;
+  icon: LucideIcon;
   accent?: boolean;
 };
 
@@ -91,8 +94,13 @@ function Avatar({
 
 export function AccountButton({ user }: { user: ShellUser | null }) {
   const [open, setOpen] = useState(false);
+  const [desktopApp, setDesktopApp] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    setDesktopApp(isDesktopApp());
+  }, []);
 
   useEffect(() => {
     setOpen(false);
@@ -127,6 +135,14 @@ export function AccountButton({ user }: { user: ShellUser | null }) {
   const items = MENU_ITEMS.map((item) =>
     item.href === "" ? { ...item, href: `/u/${user.id}` } : item,
   );
+  if (desktopApp) {
+    items.push({
+      href: "/downloads",
+      label: "ダウンロード済み",
+      hint: "PCに保存した曲を再生",
+      icon: Download,
+    });
+  }
 
   const menuContent = (
     <div className="flex flex-col">

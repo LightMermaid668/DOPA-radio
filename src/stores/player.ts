@@ -10,6 +10,8 @@ import {
   eqGraphReady,
   MAX_BOOST,
   MIN_BOOST,
+  resetAiMix,
+  startAiMix,
   STUDIO_DEFAULTS,
   studioGraphReady,
   type StudioSettings,
@@ -43,6 +45,7 @@ const EQ_TREBLE_KEY = "dopa:eq-treble";
 const BOOST_KEY = "dopa:boost-level";
 const CROSSFADE_LONG_KEY = "dopa:crossfade-long";
 const STUDIO_KEY = "dopa:studio";
+const AI_MIX_KEY = "dopa:ai-mix";
 
 // 次の曲を重ね始める秒数（ワーカーが焼き込む頭フェードインと同長）
 const CROSSFADE_SEC = 3;
@@ -64,6 +67,8 @@ export type PlayerTrack = {
   deepLink?: string | null;
   chorusStartSec?: number | null;
   chorusEndSec?: number | null;
+  /** デスクトップアプリで保存したローカルファイル（dopa-local://...） */
+  localSrc?: string | null;
 };
 
 export type EqBand = "bass" | "mid" | "treble";
@@ -85,6 +90,7 @@ type PlayerState = {
   chorusOnly: boolean;
   crossfade: boolean;
   crossfadeLong: boolean;
+  aiMix: boolean;
   repeatMode: RepeatMode;
   studio: StudioSettings;
   eqEnabled: boolean;
@@ -109,6 +115,7 @@ type PlayerState = {
   setChorusOnly: (value: boolean) => void;
   setCrossfade: (value: boolean) => void;
   setCrossfadeLong: (value: boolean) => void;
+  setAiMix: (value: boolean) => void;
   maybeCrossfade: (time: number, duration: number) => void;
   cancelPreload: () => void;
   setStudio: (patch: Partial<StudioSettings>) => void;
@@ -131,6 +138,13 @@ let startToken = 0;
 
 // クロスフェード: 2つ目の要素で先読み再生中の次曲インデックス（nullなら重なりなし）
 let overlapNextIndex: number | null = null;
+
+// 先読み再生の開始位置（サビだけモードではサビ頭から始まる）
+let overlapStartPosition = 0;
+
+export function getOverlapStartPosition(): number {
+  return overlapStartPosition;
+}
 
 // クロスフェード音源が無かった曲（同じ曲で無限に再試行しない）
 let crossfadeFallbackId: string | null = null;
@@ -205,6 +219,10 @@ function armGestureResume() {
 function cancelOverlap() {
   if (overlapNextIndex === null) return;
   overlapNextIndex = null;
+  overlapStartPosition = 0;
+  // AIミックスのフィルターを元に戻す
+  const main = getAudio();
+  if (main) resetAiMix(main);
   const secondary = getSecondaryAudio();
   if (secondary) {
     retireAudioElement(secondary);
@@ -245,9 +263,14 @@ function advanceOverlap(): boolean {
   const oldMain = getAudio();
   swapAudioRoles();
   if (oldMain) {
+    resetAiMix(oldMain);
     retireAudioElement(oldMain);
   }
+  overlapStartPosition = 0;
   const newMain = getAudio();
+  if (newMain) {
+    resetAiMix(newMain);
+  }
   // EQ使用中なら新しいメイン要素をグラフに接続し直す（音質設定を維持）
   if (newMain && eqGraphReady()) {
     attachToEqGraph(newMain);
@@ -466,7 +489,10 @@ function startTrack(
   if (!audio) return;
 
   let src: string;
-  if (track.kind === "apple") {
+  if (track.localSrc) {
+    // デスクトップアプリ: ダウンロード済みのローカルファイル
+    src = track.localSrc;
+  } else if (track.kind === "apple") {
     if (!track.previewUrl) {
       audio.pause();
       usePlayer.setState({
@@ -480,9 +506,9 @@ function startTrack(
     src = track.previewUrl;
   } else {
     // クロスフェードONならフェードを焼き込んだ音源を使う（無ければエラー時にフォールバック）
-    const { crossfade, chorusOnly } = usePlayer.getState();
+    const { crossfade } = usePlayer.getState();
     src =
-      crossfade && !chorusOnly && crossfadeFallbackId !== track.id
+      crossfade && crossfadeFallbackId !== track.id
         ? `/api/tracks/${track.id}/crossfade`
         : trackSrc(track.id);
   }
@@ -532,6 +558,12 @@ function activateSoundGraph(audio: HTMLAudioElement) {
     );
     applyBoostGain(boostLevel);
     applyStudioSettings(studio);
+
+    // AIミックスがONなら2つ目の要素もグラフに接続しておく
+    if (usePlayer.getState().aiMix) {
+      const secondary = getSecondaryAudio();
+      if (secondary) attachToEqGraph(secondary);
+    }
 
     // iOS Safari は MediaElementSource 接続直後に再生が止まる/無音になることがあるため再開させる
     if (usePlayer.getState().isPlaying) {
@@ -699,6 +731,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   chorusOnly: false,
   crossfade: true,
   crossfadeLong: false,
+  aiMix: false,
   repeatMode: "off",
   studio: STUDIO_DEFAULTS,
   eqEnabled: false,
@@ -899,6 +932,29 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     set({ crossfadeLong: value });
   },
 
+  setAiMix: (value) => {
+    persist(AI_MIX_KEY, String(value));
+    set({ aiMix: value });
+    // AIミックスはクロスフェード中に動くので、ONにしたらクロスフェードも有効にする
+    if (value && !get().crossfade) {
+      get().setCrossfade(true);
+    }
+    const audio = getAudio();
+    if (!audio) return;
+    if (value) {
+      // AIミックスはWeb Audioの要素別フィルターを使うため、グラフを有効化する
+      if (studioGraphReady()) {
+        const secondary = getSecondaryAudio();
+        if (secondary) attachToEqGraph(secondary);
+      } else {
+        activateSoundGraph(audio);
+      }
+    } else {
+      cancelOverlap();
+      resetAiMix(audio);
+    }
+  },
+
   setStudio: (patch) => {
     const studio = { ...get().studio, ...patch };
     persist(STUDIO_KEY, JSON.stringify(studio));
@@ -936,15 +992,25 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     // ドパモード: キュー残りが少なくなったら先読みで補充しておく
     if (state.dopaMode) void maybePrefetchRadio();
     if (state.repeatMode === "one") return;
-    if (!state.crossfade || state.chorusOnly) return;
+    if (!state.crossfade) return;
     if (overlapNextIndex !== null) return;
     if (!duration || !Number.isFinite(duration)) return;
-    const overlapSec = state.crossfadeLong ? CROSSFADE_LONG_SEC : CROSSFADE_SEC;
-    if (time < duration - overlapSec) return;
 
     const { queue, index, rate, preservesPitch } = state;
     const current = queue[index];
     if (!current || current.kind !== "upload") return;
+
+    // サビだけモードではサビ終端が実質の曲終わり
+    const chorusEnd =
+      state.chorusOnly &&
+      current.chorusEndSec != null &&
+      current.chorusEndSec - (current.chorusStartSec ?? 0) >= 5
+        ? current.chorusEndSec
+        : null;
+    const effectiveEnd = chorusEnd ?? duration;
+    const overlapSec =
+      state.aiMix || state.crossfadeLong ? CROSSFADE_LONG_SEC : CROSSFADE_SEC;
+    if (time < effectiveEnd - overlapSec) return;
 
     // 次の曲（全曲リピートで最後なら先頭へ）
     const directNext = queue[index + 1];
@@ -969,7 +1035,19 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         : (nextTrack.previewUrl ?? null);
     if (!nextSrc) return;
 
+    // サビだけモードでは次の曲もサビ頭から始める
+    let startAt = 0;
+    if (
+      chorusEnd != null &&
+      nextTrack.kind === "upload" &&
+      nextTrack.chorusStartSec != null &&
+      nextTrack.chorusStartSec > 1
+    ) {
+      startAt = nextTrack.chorusStartSec;
+    }
+
     overlapNextIndex = targetIndex;
+    overlapStartPosition = startAt;
     secondary.src = nextSrc;
     secondary.load();
     applyPlaybackSettings(secondary, { rate, preservesPitch });
@@ -1000,7 +1078,29 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         cancelOverlap();
       });
     };
-    startSecondary(0);
+
+    const begin = () => {
+      startSecondary(0);
+      if (state.aiMix) {
+        startAiMix(main, secondary, overlapSec, { fadeIncoming: startAt === 0 });
+      }
+    };
+
+    if (startAt > 0) {
+      const onMeta = () => {
+        secondary.removeEventListener("loadedmetadata", onMeta);
+        if (overlapNextIndex !== targetIndex) return;
+        try {
+          secondary.currentTime = startAt;
+        } catch {
+          /* ignore */
+        }
+        begin();
+      };
+      secondary.addEventListener("loadedmetadata", onMeta);
+    } else {
+      begin();
+    }
   },
 
   setEqEnabled: (value) => {
@@ -1009,7 +1109,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const audio = getAudio();
     if (!audio) return;
     const needsGraph =
-      value || get().boostLevel > MIN_BOOST || studioActive(get().studio);
+      value || get().boostLevel > MIN_BOOST || studioActive(get().studio) || get().aiMix;
     if (needsGraph) {
       activateSoundGraph(audio);
     } else {
@@ -1027,7 +1127,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const audio = getAudio();
     if (!audio) return;
     const needsGraph =
-      clamped > MIN_BOOST || get().eqEnabled || studioActive(get().studio);
+      clamped > MIN_BOOST || get().eqEnabled || studioActive(get().studio) || get().aiMix;
     if (needsGraph) {
       if (eqGraphReady()) {
         applyBoostGain(clamped);
@@ -1102,6 +1202,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const repeatMode: RepeatMode =
       storedRepeat === "one" || storedRepeat === "all" ? storedRepeat : "off";
     const crossfadeLong = localStorage.getItem(CROSSFADE_LONG_KEY) === "true";
+    const aiMix = localStorage.getItem(AI_MIX_KEY) === "true";
     let studio: StudioSettings = { ...STUDIO_DEFAULTS };
     try {
       const raw = localStorage.getItem(STUDIO_KEY);
@@ -1135,6 +1236,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       chorusOnly,
       crossfade,
       crossfadeLong,
+      aiMix,
       repeatMode,
       studio,
       eqEnabled,
@@ -1149,7 +1251,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
       const needsGraph =
-        eqEnabled || boostLevel > MIN_BOOST || studioActive(studio);
+        eqEnabled || boostLevel > MIN_BOOST || studioActive(studio) || aiMix;
       if (needsGraph && typeof document !== "undefined") {
         // グラフ生成は必ずユーザー操作内で行う（自動再生ポリシーで
         // サスペンド状態のAudioContextに接続され無音になるのを防ぐ）。

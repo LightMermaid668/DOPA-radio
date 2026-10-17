@@ -30,10 +30,12 @@ import {
   resetAudioVolume,
   warmUpSecondaryAudio,
 } from "@/lib/player-audio";
-import { isDesktopApp } from "@/lib/desktop";
+import { getDesktop, isDesktopApp } from "@/lib/desktop";
 import { loadSpectrogram, type Spectrogram } from "@/lib/spectrogram";
 import { cn } from "@/lib/utils";
+import { showToast } from "@/components/ui/toast";
 import {
+  getOverlapStartPosition,
   handleAudioError,
   recoverPlayback,
   usePlayer,
@@ -110,6 +112,9 @@ function analysisTarget(
   track: PlayerTrack,
   semitones: number,
 ): { key: string; url: string } | null {
+  if (track.localSrc) {
+    return { key: `local:${track.localSrc}`, url: track.localSrc };
+  }
   if (track.kind === "upload") {
     if (semitones !== 0) {
       return {
@@ -158,6 +163,8 @@ export function PlayerBar() {
   const setCrossfade = usePlayer((s) => s.setCrossfade);
   const crossfadeLong = usePlayer((s) => s.crossfadeLong);
   const setCrossfadeLong = usePlayer((s) => s.setCrossfadeLong);
+  const aiMix = usePlayer((s) => s.aiMix);
+  const setAiMix = usePlayer((s) => s.setAiMix);
   const studio = usePlayer((s) => s.studio);
   const setStudio = usePlayer((s) => s.setStudio);
   const repeatMode = usePlayer((s) => s.repeatMode);
@@ -263,8 +270,12 @@ export function PlayerBar() {
         // 先読み要素が予定より長く鳴り続けた場合（メイン側の停止・スタール等）は
         // 二重再生を防ぐため先読みを中断する
         const element = event.currentTarget as HTMLAudioElement;
-        const overrunLimit = usePlayer.getState().crossfadeLong ? 10 : 6;
-        if (element === getSecondaryAudio() && element.currentTime > overrunLimit) {
+        const state = usePlayer.getState();
+        const overrunLimit = state.crossfadeLong || state.aiMix ? 10 : 6;
+        if (
+          element === getSecondaryAudio() &&
+          element.currentTime - getOverlapStartPosition() > overrunLimit
+        ) {
           usePlayer.getState().cancelPreload();
         }
         return;
@@ -540,6 +551,27 @@ export function PlayerBar() {
     });
   }, [track]);
 
+  async function playInAppleMusic() {
+    const bridge = getDesktop();
+    if (!bridge || !track) return;
+    try {
+      const result = await bridge.playInAppleMusic({
+        title: track.title,
+        artist: track.artist,
+        deepLink: track.deepLink ?? null,
+      });
+      if (result.status === "played") {
+        showToast("Apple Musicで再生しています", "success");
+      } else if (result.status === "opened") {
+        showToast("Apple Musicアプリを開きました", "info");
+      } else {
+        showToast("Apple Musicで再生できませんでした", "error");
+      }
+    } catch {
+      showToast("Apple Musicで再生できませんでした", "error");
+    }
+  }
+
   const hostDiv = (
     <div
       ref={containerRef}
@@ -611,6 +643,18 @@ export function PlayerBar() {
                     >
                       アプリで開く
                     </a>
+                  </>
+                ) : null}
+                {desktopApp && track.kind === "apple" ? (
+                  <>
+                    {" ・ "}
+                    <button
+                      type="button"
+                      onClick={() => void playInAppleMusic()}
+                      className="text-accent underline underline-offset-2"
+                    >
+                      Musicアプリで再生
+                    </button>
                   </>
                 ) : null}
               </p>
@@ -819,9 +863,18 @@ export function PlayerBar() {
                               className="accent-fuchsia-500"
                             />
                           </label>
+                          <label className="flex cursor-pointer items-center justify-between text-[11px] text-zinc-300">
+                            AIミックス（DJ風に混ぜる）
+                            <input
+                              type="checkbox"
+                              checked={aiMix}
+                              onChange={(event) => setAiMix(event.target.checked)}
+                              className="accent-fuchsia-500"
+                            />
+                          </label>
                         </div>
                         <p className="mt-2 px-1 text-[10px] leading-tight text-zinc-500">
-                          デスクトップアプリ専用の高音質エフェクトです（Chrome/ElectronのWeb Audioで動作）。※モノラル音源はボーカル除去100%で無音になります
+                          AIミックスはクロスフェード中にフィルターを回してDJ風につなぎます（サビだけ中も使用可）。デスクトップアプリ専用です。※モノラル音源はボーカル除去100%で無音になります
                         </p>
                       </>
                     ) : null}
@@ -1091,8 +1144,8 @@ export function PlayerBar() {
               <p className="px-5 pb-2 text-[11px] text-zinc-500">
                 {dopaMode ? "キューが終わると似てる曲を自動追加。" : ""}
                 {chorusOnly ? "サビ範囲が設定された曲はサビの部分だけ再生します。" : ""}
-                {crossfade && !chorusOnly
-                  ? "曲の終わり3秒前から次の曲を重ねて途切れなくつなぎます（iPhoneでも動作・サビだけ中はOFF）。"
+                {crossfade
+                  ? "曲の終わり3秒前から次の曲を重ねて途切れなくつなぎます（サビだけ中も動作）。"
                   : ""}
                 {repeatMode === "one"
                   ? "1曲リピート: 曲が終わると同じ曲を最初から再生します。"

@@ -20,6 +20,10 @@ import {
 } from "lucide-react";
 
 import { ShareButton } from "@/components/playlists/share-button";
+import {
+  TracksDownloadButton,
+  TrackDownloadIconButton,
+} from "@/components/desktop/download-buttons";
 import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { QrShareButton } from "@/components/share/qr-share-button";
 import { Button } from "@/components/ui/button";
@@ -301,6 +305,16 @@ export function PlaylistDetail({
   const addableOptions = (options ?? []).filter(
     (option) => option.status === "ready" && !existingTrackIds.has(option.id),
   );
+  const downloadableItems = data.items
+    .filter(
+      (item) =>
+        item.kind === "upload" && item.trackId && item.status === "ready" && item.title,
+    )
+    .map((item) => ({
+      id: item.trackId as string,
+      title: item.title ?? "無題のトラック",
+      artist: item.artist,
+    }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -407,6 +421,7 @@ export function PlaylistDetail({
               </Button>
               <ShareButton path={`/p/${data.id}`} title={data.title} />
               <QrShareButton path={`/p/${data.id}`} title={data.title} />
+              <TracksDownloadButton items={downloadableItems} />
               <select
                 value={data.visibility}
                 onChange={(e) => patchPlaylist({ visibility: e.target.value })}
@@ -680,6 +695,15 @@ export function PlaylistDetail({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
+                  {item.kind === "upload" && item.trackId && item.status === "ready" ? (
+                    <TrackDownloadIconButton
+                      track={{
+                        id: item.trackId,
+                        title: item.title ?? "無題のトラック",
+                        artist: item.artist,
+                      }}
+                    />
+                  ) : null}
                   {item.kind === "upload" && item.ownerId ? (
                     <Link
                       href={item.ownerId === currentUserId ? "/home" : `/u/${item.ownerId}`}

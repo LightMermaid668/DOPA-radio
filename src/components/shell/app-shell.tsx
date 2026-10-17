@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
-import { Settings, UploadCloud } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Download, Settings, UploadCloud } from "lucide-react";
 
 import { Logo } from "@/components/logo";
 import { QrScannerButton } from "@/components/share/qr-scanner-button";
 import { AccountButton, type ShellUser } from "@/components/shell/account-button";
 import { markNavDirection, NAV_ITEMS, navIndexForPath } from "@/components/shell/nav";
+import { isDesktopApp } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 
 export function AppShell({
@@ -22,6 +23,11 @@ export function AppShell({
   const activeIndex = navIndexForPath(pathname);
   const mainRef = useRef<HTMLElement>(null);
   const previousPathRef = useRef(pathname);
+  const [desktopApp, setDesktopApp] = useState(false);
+
+  useEffect(() => {
+    setDesktopApp(isDesktopApp());
+  }, []);
 
   // タブバー分だけプレイヤーを持ち上げる（CSS変数で伝える）
   useEffect(() => {
@@ -124,6 +130,16 @@ export function AppShell({
             <Logo />
           </Link>
           <div className="flex items-center gap-1">
+            {desktopApp ? (
+              <Link
+                href="/downloads"
+                aria-label="ダウンロード済み"
+                title="ダウンロード済み"
+                className="flex size-9 items-center justify-center rounded-full text-zinc-300 hover:bg-dopa-800"
+              >
+                <Download className="size-4.5" />
+              </Link>
+            ) : null}
             <QrScannerButton />
             <AccountButton user={user} />
           </div>

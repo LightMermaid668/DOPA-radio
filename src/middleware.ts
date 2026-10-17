@@ -1,7 +1,14 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_PREFIXES = ["/library", "/upload", "/playlists", "/settings", "/admin"];
+const PROTECTED_PREFIXES = [
+  "/library",
+  "/upload",
+  "/playlists",
+  "/downloads",
+  "/settings",
+  "/admin",
+];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -23,6 +30,7 @@ export const config = {
     "/library/:path*",
     "/upload/:path*",
     "/playlists/:path*",
+    "/downloads/:path*",
     "/settings/:path*",
     "/admin/:path*",
   ],

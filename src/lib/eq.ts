@@ -58,12 +58,38 @@ let graph: {
 // MediaElementSourceは1要素につき1回だけ作成できるため、接続済み要素を記録する
 const connectedElements = new WeakSet<HTMLAudioElement>();
 
+// 要素ごとのミックスチェーン（AIミックス用: フィルター+ゲイン）
+type MixChain = {
+  highpass: BiquadFilterNode;
+  lowpass: BiquadFilterNode;
+  gain: GainNode;
+};
+
+const elementChains = new WeakMap<HTMLAudioElement, MixChain>();
+
 function connectElement(element: HTMLAudioElement): boolean {
   if (!audioContext || !graph) return false;
   if (connectedElements.has(element)) return true;
   try {
     const source = audioContext.createMediaElementSource(element);
-    source.connect(graph.bass);
+
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 20;
+    highpass.Q.value = 0.7;
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 20000;
+    lowpass.Q.value = 0.7;
+    const gain = audioContext.createGain();
+    gain.gain.value = 1;
+
+    source.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(gain);
+    gain.connect(graph.bass);
+
+    elementChains.set(element, { highpass, lowpass, gain });
     connectedElements.add(element);
     return true;
   } catch (error) {
@@ -104,7 +130,9 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return false;
       audioContext = new Ctor();
+    }
 
+    if (!graph) {
       const bass = audioContext.createBiquadFilter();
       bass.type = "lowshelf";
       bass.frequency.value = 200;
@@ -131,67 +159,74 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
       let studio: StudioNodes | null = null;
 
       if (isDesktopApp()) {
-        // ---- スタジオモード（デスクトップ専用の固定グラフ。各エフェクトはゲインで0=無効） ----
-        const studioBass = audioContext.createBiquadFilter();
-        studioBass.type = "lowshelf";
-        studioBass.frequency.value = 60;
-        studioBass.gain.value = 0;
+        try {
+          // ---- スタジオモード（デスクトップ専用の固定グラフ。各エフェクトはゲインで0=無効） ----
+          const studioBass = audioContext.createBiquadFilter();
+          studioBass.type = "lowshelf";
+          studioBass.frequency.value = 60;
+          studioBass.gain.value = 0;
 
-        const dry = audioContext.createGain();
-        dry.gain.value = 1;
+          const dry = audioContext.createGain();
+          dry.gain.value = 1;
 
-        const splitter = audioContext.createChannelSplitter(2);
-        const invL = audioContext.createGain();
-        invL.gain.value = -1;
-        const invR = audioContext.createGain();
-        invR.gain.value = -1;
-        const merger = audioContext.createChannelMerger(2);
-        const wet = audioContext.createGain();
-        wet.gain.value = 0;
-        const bus = audioContext.createGain();
+          const splitter = audioContext.createChannelSplitter(2);
+          const invL = audioContext.createGain();
+          invL.gain.value = -1;
+          const invR = audioContext.createGain();
+          invR.gain.value = -1;
+          const merger = audioContext.createChannelMerger(2);
+          const wet = audioContext.createGain();
+          wet.gain.value = 0;
+          const bus = audioContext.createGain();
 
-        const panner = audioContext.createStereoPanner();
-        const lfo = audioContext.createOscillator();
-        lfo.frequency.value = 0.12;
-        const lfoGain = audioContext.createGain();
-        lfoGain.gain.value = 0;
-        lfo.connect(lfoGain);
-        lfoGain.connect(panner.pan);
-        lfo.start();
+          const panner = audioContext.createStereoPanner();
+          const lfo = audioContext.createOscillator();
+          lfo.frequency.value = 0.12;
+          const lfoGain = audioContext.createGain();
+          lfoGain.gain.value = 0;
+          lfo.connect(lfoGain);
+          lfoGain.connect(panner.pan);
+          lfo.start();
 
-        const rvDry = audioContext.createGain();
-        rvDry.gain.value = 1;
-        const convolver = audioContext.createConvolver();
-        convolver.buffer = makeReverbImpulse(audioContext);
-        const rvWet = audioContext.createGain();
-        rvWet.gain.value = 0;
-        const rvBus = audioContext.createGain();
+          const rvDry = audioContext.createGain();
+          rvDry.gain.value = 1;
+          const convolver = audioContext.createConvolver();
+          convolver.buffer = makeReverbImpulse(audioContext);
+          const rvWet = audioContext.createGain();
+          rvWet.gain.value = 0;
+          const rvBus = audioContext.createGain();
 
-        // treble → studioBass →（ドライ + ボーカル除去ウェット）→ bus
-        treble.connect(studioBass);
-        studioBass.connect(dry);
-        dry.connect(bus);
-        // カラオケ方式: 左 = L - R / 右 = R - L（中央のボーカルを打ち消す）
-        studioBass.connect(splitter);
-        splitter.connect(merger, 0, 0);
-        splitter.connect(invR, 1);
-        invR.connect(merger, 0, 0);
-        splitter.connect(merger, 1, 1);
-        splitter.connect(invL, 0);
-        invL.connect(merger, 1, 1);
-        merger.connect(wet);
-        wet.connect(bus);
+          // treble → studioBass →（ドライ + ボーカル除去ウェット）→ bus
+          treble.connect(studioBass);
+          studioBass.connect(dry);
+          dry.connect(bus);
+          // カラオケ方式: 左 = L - R / 右 = R - L（中央のボーカルを打ち消す）
+          studioBass.connect(splitter);
+          splitter.connect(merger, 0, 0);
+          splitter.connect(invR, 1);
+          invR.connect(merger, 0, 0);
+          splitter.connect(merger, 1, 1);
+          splitter.connect(invL, 0);
+          invL.connect(merger, 0, 1);
+          merger.connect(wet);
+          wet.connect(bus);
 
-        // bus → 8Dパン →（リバーブ ドライ/ウェット）→ boost
-        bus.connect(panner);
-        panner.connect(rvDry);
-        rvDry.connect(rvBus);
-        panner.connect(convolver);
-        convolver.connect(rvWet);
-        rvWet.connect(rvBus);
-        rvBus.connect(boost);
+          // bus → 8Dパン →（リバーブ ドライ/ウェット）→ boost
+          bus.connect(panner);
+          panner.connect(rvDry);
+          rvDry.connect(rvBus);
+          panner.connect(convolver);
+          convolver.connect(rvWet);
+          rvWet.connect(rvBus);
+          rvBus.connect(boost);
 
-        studio = { bassShelf: studioBass, dry, wet, lfoGain, rvDry, rvWet };
+          studio = { bassShelf: studioBass, dry, wet, lfoGain, rvDry, rvWet };
+        } catch (studioError) {
+          // スタジオ部分が失敗しても通常のサウンド設定は使えるようにする
+          console.warn("[eq] studio graph failed, using simple chain:", studioError);
+          studio = null;
+          treble.connect(boost);
+        }
       } else {
         treble.connect(boost);
       }
@@ -257,4 +292,61 @@ export function eqGraphReady(): boolean {
 
 export function studioGraphReady(): boolean {
   return Boolean(audioContext && graph?.studio);
+}
+
+/**
+ * AIミックス: DJ風にフィルターを回しながら2曲を混ぜる。
+ * 出ていく曲はこもりながら消え、入ってくる曲は細い音から全帯域へ開く。
+ */
+export function startAiMix(
+  outgoing: HTMLAudioElement,
+  incoming: HTMLAudioElement,
+  durationSec: number,
+  options?: { fadeIncoming?: boolean },
+): boolean {
+  if (!audioContext) return false;
+  const out = elementChains.get(outgoing);
+  const inc = elementChains.get(incoming);
+  if (!out || !inc) return false;
+
+  const now = audioContext.currentTime;
+  const end = now + Math.max(0.5, durationSec);
+
+  out.lowpass.frequency.cancelScheduledValues(now);
+  out.lowpass.frequency.setValueAtTime(20000, now);
+  out.lowpass.frequency.exponentialRampToValueAtTime(400, end);
+  out.highpass.frequency.cancelScheduledValues(now);
+  out.highpass.frequency.setValueAtTime(20, now);
+  out.gain.gain.cancelScheduledValues(now);
+  out.gain.gain.setValueAtTime(1, now);
+  out.gain.gain.linearRampToValueAtTime(0, end);
+
+  inc.highpass.frequency.cancelScheduledValues(now);
+  inc.highpass.frequency.setValueAtTime(900, now);
+  inc.highpass.frequency.exponentialRampToValueAtTime(30, end);
+  inc.lowpass.frequency.cancelScheduledValues(now);
+  inc.lowpass.frequency.setValueAtTime(20000, now);
+  inc.gain.gain.cancelScheduledValues(now);
+  if (options?.fadeIncoming === false) {
+    // 焼き込みフェードインが無い開始位置（サビ頭など）でも急に出ないように
+    inc.gain.gain.setValueAtTime(0.05, now);
+    inc.gain.gain.linearRampToValueAtTime(1, end);
+  } else {
+    inc.gain.gain.setValueAtTime(1, now);
+  }
+  return true;
+}
+
+/** AIミックスのフィルター/ゲインを元に戻す */
+export function resetAiMix(element: HTMLAudioElement) {
+  if (!audioContext) return;
+  const chain = elementChains.get(element);
+  if (!chain) return;
+  const now = audioContext.currentTime;
+  chain.gain.gain.cancelScheduledValues(now);
+  chain.gain.gain.setTargetAtTime(1, now, 0.06);
+  chain.highpass.frequency.cancelScheduledValues(now);
+  chain.highpass.frequency.setTargetAtTime(20, now, 0.06);
+  chain.lowpass.frequency.cancelScheduledValues(now);
+  chain.lowpass.frequency.setTargetAtTime(20000, now, 0.06);
 }
