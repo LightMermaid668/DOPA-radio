@@ -13,6 +13,7 @@ const eslintConfig = [
       "public/sw.js",
       "drizzle/**",
       "next-env.d.ts",
+      "desktop/**",
     ],
   },
 ];

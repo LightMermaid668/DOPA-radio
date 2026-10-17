@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Check,
   CheckSquare,
+  Download,
   ListPlus,
   Loader2,
   MoreVertical,
@@ -27,6 +28,8 @@ import { ChorusEditor } from "@/components/library/chorus-editor";
 import { NowPlayingIndicator } from "@/components/player/now-playing-indicator";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { confirmDialog } from "@/components/ui/dialog";
+import { showToast } from "@/components/ui/toast";
+import { getDesktop, isDesktopApp, trackDownloadFilename } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/stores/player";
 
@@ -178,6 +181,25 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
     setEditingId(track.id);
     setEditTitle(track.title);
     setEditArtist(track.artist ?? "");
+  }
+
+  async function downloadTrack(track: LibraryTrack) {
+    const bridge = getDesktop();
+    if (!bridge) return;
+    try {
+      const url = new URL(`/api/tracks/${track.id}/file`, window.location.origin).href;
+      const result = await bridge.download({
+        url,
+        filename: trackDownloadFilename(track.title, track.artist),
+      });
+      if (result.ok) {
+        showToast(`ダウンロードしました（${track.title}）`, "success");
+      } else {
+        showToast(result.error ?? "ダウンロードに失敗しました", "error");
+      }
+    } catch {
+      showToast("ダウンロードに失敗しました", "error");
+    }
   }
 
   async function addSimilar(track: LibraryTrack) {
@@ -576,6 +598,21 @@ export function TrackList({ tracks }: { tracks: LibraryTrack[] }) {
                   <Scissors className="size-3.5" />
                   サビ範囲を設定
                 </button>
+                {isDesktopApp() ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const track = menu.track;
+                      setMenu(null);
+                      void downloadTrack(track);
+                    }}
+                    disabled={menu.track.status !== "ready"}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-zinc-200 hover:bg-dopa-800 disabled:opacity-40"
+                  >
+                    <Download className="size-3.5" />
+                    ダウンロード
+                  </button>
+                ) : null}
 
                 <div className="my-1 h-px bg-dopa-800" />
                 <p className="px-2.5 pb-1 pt-0.5 text-[10px] text-zinc-500">公開範囲</p>

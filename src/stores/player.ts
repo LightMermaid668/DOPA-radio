@@ -3,12 +3,16 @@ import { create } from "zustand";
 import {
   applyBoostGain,
   applyEqGains,
+  applyStudioSettings,
   attachToEqGraph,
   EQ_PRESETS,
   ensureEqGraph,
   eqGraphReady,
   MAX_BOOST,
   MIN_BOOST,
+  STUDIO_DEFAULTS,
+  studioGraphReady,
+  type StudioSettings,
 } from "@/lib/eq";
 import {
   applyPlaybackSettings,
@@ -37,9 +41,17 @@ const EQ_BASS_KEY = "dopa:eq-bass";
 const EQ_MID_KEY = "dopa:eq-mid";
 const EQ_TREBLE_KEY = "dopa:eq-treble";
 const BOOST_KEY = "dopa:boost-level";
+const CROSSFADE_LONG_KEY = "dopa:crossfade-long";
+const STUDIO_KEY = "dopa:studio";
 
 // 次の曲を重ね始める秒数（ワーカーが焼き込む頭フェードインと同長）
 const CROSSFADE_SEC = 3;
+// ロングミックス時の重なり秒数（末尾フェードアウト6秒いっぱいに重ねる）
+const CROSSFADE_LONG_SEC = 6;
+
+function studioActive(studio: StudioSettings): boolean {
+  return studio.vocal > 0 || studio.bass > 0 || studio.reverb > 0 || studio.eightD;
+}
 
 export type PlayerTrack = {
   id: string;
@@ -72,7 +84,9 @@ type PlayerState = {
   dopaMode: boolean;
   chorusOnly: boolean;
   crossfade: boolean;
+  crossfadeLong: boolean;
   repeatMode: RepeatMode;
+  studio: StudioSettings;
   eqEnabled: boolean;
   eqPreset: string;
   eqBass: number;
@@ -94,8 +108,10 @@ type PlayerState = {
   setDopaMode: (value: boolean) => void;
   setChorusOnly: (value: boolean) => void;
   setCrossfade: (value: boolean) => void;
+  setCrossfadeLong: (value: boolean) => void;
   maybeCrossfade: (time: number, duration: number) => void;
   cancelPreload: () => void;
+  setStudio: (patch: Partial<StudioSettings>) => void;
   setRepeatMode: (mode: RepeatMode) => void;
   cycleRepeatMode: () => void;
   setEqEnabled: (value: boolean) => void;
@@ -508,13 +524,14 @@ function activateSoundGraph(audio: HTMLAudioElement) {
       usePlayer.setState({ playbackError: "サウンド設定を初期化できませんでした" });
       return;
     }
-    const { eqEnabled, eqBass, eqMid, eqTreble, boostLevel } = usePlayer.getState();
+    const { eqEnabled, eqBass, eqMid, eqTreble, boostLevel, studio } = usePlayer.getState();
     applyEqGains(
       eqEnabled
         ? { bass: eqBass, mid: eqMid, treble: eqTreble }
         : { bass: 0, mid: 0, treble: 0 },
     );
     applyBoostGain(boostLevel);
+    applyStudioSettings(studio);
 
     // iOS Safari は MediaElementSource 接続直後に再生が止まる/無音になることがあるため再開させる
     if (usePlayer.getState().isPlaying) {
@@ -681,7 +698,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   dopaMode: false,
   chorusOnly: false,
   crossfade: true,
+  crossfadeLong: false,
   repeatMode: "off",
+  studio: STUDIO_DEFAULTS,
   eqEnabled: false,
   eqPreset: "flat",
   eqBass: 0,
@@ -805,10 +824,11 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (audio && Number.isFinite(sec)) {
       audio.currentTime = sec;
     }
-    const { duration } = get();
+    const { duration, crossfadeLong } = get();
+    const overlapSec = crossfadeLong ? CROSSFADE_LONG_SEC : CROSSFADE_SEC;
     if (
       overlapNextIndex !== null &&
-      (!Number.isFinite(sec) || sec < duration - CROSSFADE_SEC)
+      (!Number.isFinite(sec) || sec < duration - overlapSec)
     ) {
       cancelOverlap();
     }
@@ -874,6 +894,25 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     set({ crossfade: value });
   },
 
+  setCrossfadeLong: (value) => {
+    persist(CROSSFADE_LONG_KEY, String(value));
+    set({ crossfadeLong: value });
+  },
+
+  setStudio: (patch) => {
+    const studio = { ...get().studio, ...patch };
+    persist(STUDIO_KEY, JSON.stringify(studio));
+    set({ studio });
+    const audio = getAudio();
+    if (!audio) return;
+    if (studioGraphReady()) {
+      applyStudioSettings(studio);
+    } else if (studioActive(studio) || get().eqEnabled || get().boostLevel > MIN_BOOST) {
+      // スタジオ操作自体がユーザー操作なので、ここでグラフを作る
+      activateSoundGraph(audio);
+    }
+  },
+
   cancelPreload: () => {
     cancelOverlap();
   },
@@ -900,7 +939,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     if (!state.crossfade || state.chorusOnly) return;
     if (overlapNextIndex !== null) return;
     if (!duration || !Number.isFinite(duration)) return;
-    if (time < duration - CROSSFADE_SEC) return;
+    const overlapSec = state.crossfadeLong ? CROSSFADE_LONG_SEC : CROSSFADE_SEC;
+    if (time < duration - overlapSec) return;
 
     const { queue, index, rate, preservesPitch } = state;
     const current = queue[index];
@@ -968,7 +1008,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     set({ eqEnabled: value });
     const audio = getAudio();
     if (!audio) return;
-    const needsGraph = value || get().boostLevel > MIN_BOOST;
+    const needsGraph =
+      value || get().boostLevel > MIN_BOOST || studioActive(get().studio);
     if (needsGraph) {
       activateSoundGraph(audio);
     } else {
@@ -985,7 +1026,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     set({ boostLevel: clamped });
     const audio = getAudio();
     if (!audio) return;
-    const needsGraph = clamped > MIN_BOOST || get().eqEnabled;
+    const needsGraph =
+      clamped > MIN_BOOST || get().eqEnabled || studioActive(get().studio);
     if (needsGraph) {
       if (eqGraphReady()) {
         applyBoostGain(clamped);
@@ -1059,6 +1101,22 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const storedRepeat = localStorage.getItem(REPEAT_MODE_KEY);
     const repeatMode: RepeatMode =
       storedRepeat === "one" || storedRepeat === "all" ? storedRepeat : "off";
+    const crossfadeLong = localStorage.getItem(CROSSFADE_LONG_KEY) === "true";
+    let studio: StudioSettings = { ...STUDIO_DEFAULTS };
+    try {
+      const raw = localStorage.getItem(STUDIO_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<StudioSettings>;
+        studio = {
+          vocal: Number(parsed.vocal) || 0,
+          bass: Number(parsed.bass) || 0,
+          reverb: Number(parsed.reverb) || 0,
+          eightD: Boolean(parsed.eightD),
+        };
+      }
+    } catch {
+      /* ignore */
+    }
     const eqEnabled = localStorage.getItem(EQ_ENABLED_KEY) === "true";
     const eqPreset = localStorage.getItem(EQ_PRESET_KEY) ?? "flat";
     const eqBass = Number(localStorage.getItem(EQ_BASS_KEY) ?? "0") || 0;
@@ -1076,7 +1134,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       dopaMode,
       chorusOnly,
       crossfade,
+      crossfadeLong,
       repeatMode,
+      studio,
       eqEnabled,
       eqPreset,
       eqBass,
@@ -1088,7 +1148,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const audio = getAudio();
     if (audio) {
       applyPlaybackSettings(audio, { rate, preservesPitch });
-      const needsGraph = eqEnabled || boostLevel > MIN_BOOST;
+      const needsGraph =
+        eqEnabled || boostLevel > MIN_BOOST || studioActive(studio);
       if (needsGraph && typeof document !== "undefined") {
         // グラフ生成は必ずユーザー操作内で行う（自動再生ポリシーで
         // サスペンド状態のAudioContextに接続され無音になるのを防ぐ）。

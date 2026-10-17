@@ -194,6 +194,26 @@ main {
   view-transition-name: app-topbar;
 }
 
+/* ---- デスクトップアプリ（Electron） ---- */
+
+/* トップバー/ヘッダーをつかんでウィンドウを移動できるようにする */
+html.dopa-desktop .app-topbar,
+html.dopa-desktop .app-header {
+  -webkit-app-region: drag;
+}
+
+html.dopa-desktop .app-topbar a,
+html.dopa-desktop .app-topbar button,
+html.dopa-desktop .app-header a,
+html.dopa-desktop .app-header button {
+  -webkit-app-region: no-drag;
+}
+
+/* macOSの信号機ボタンと重ならないように左に余白を取る */
+html.dopa-desktop-mac .app-topbar {
+  padding-left: 88px;
+}
+
 /* シェル部分は切り替え中もそのまま見せる（スナップショットのチラつき防止） */
 ::view-transition-old(app-sidebar),
 ::view-transition-new(app-sidebar),

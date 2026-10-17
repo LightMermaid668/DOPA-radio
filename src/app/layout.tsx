@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { PlayerBar } from "@/components/player/player-bar";
 import { PwaRegister } from "@/components/pwa-register";
 import { DialogHost } from "@/components/ui/dialog";
+import { ToastHost } from "@/components/ui/toast";
 import { PWA_ANY_ICONS, PWA_APPLE_ICONS, PWA_FAVICON_ICO } from "@/lib/pwa-icons";
 import "./globals.css";
 
@@ -47,6 +48,7 @@ export default function RootLayout({
         {children}
         <PlayerBar />
         <DialogHost />
+        <ToastHost />
         <PwaRegister />
       </body>
     </html>

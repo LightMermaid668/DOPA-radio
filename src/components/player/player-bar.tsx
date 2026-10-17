@@ -30,6 +30,7 @@ import {
   resetAudioVolume,
   warmUpSecondaryAudio,
 } from "@/lib/player-audio";
+import { isDesktopApp } from "@/lib/desktop";
 import { loadSpectrogram, type Spectrogram } from "@/lib/spectrogram";
 import { cn } from "@/lib/utils";
 import {
@@ -60,6 +61,45 @@ function formatTime(sec: number): string {
 function formatBoostDb(level: number): string {
   if (level <= 1.001) return "±0dB";
   return `+${(20 * Math.log10(level)).toFixed(1)}dB`;
+}
+
+function StudioSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px] text-zinc-400">
+        <span>{label}</span>
+        <span className={value > min ? "font-semibold text-accent" : undefined}>
+          {format(value)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full cursor-pointer accent-fuchsia-500"
+        aria-label={label}
+      />
+    </div>
+  );
 }
 
 /**
@@ -94,6 +134,12 @@ export function PlayerBar() {
   const speedPopoverRef = useRef<HTMLDivElement>(null);
   const [panel, setPanel] = useState<"speed" | "sound" | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
+  // SSR結果とクライアントの不一致を避けるため、マウント後に判定する
+  const [desktopApp, setDesktopApp] = useState(false);
+
+  useEffect(() => {
+    setDesktopApp(isDesktopApp());
+  }, []);
 
   const queue = usePlayer((s) => s.queue);
   const index = usePlayer((s) => s.index);
@@ -110,6 +156,10 @@ export function PlayerBar() {
   const setChorusOnly = usePlayer((s) => s.setChorusOnly);
   const crossfade = usePlayer((s) => s.crossfade);
   const setCrossfade = usePlayer((s) => s.setCrossfade);
+  const crossfadeLong = usePlayer((s) => s.crossfadeLong);
+  const setCrossfadeLong = usePlayer((s) => s.setCrossfadeLong);
+  const studio = usePlayer((s) => s.studio);
+  const setStudio = usePlayer((s) => s.setStudio);
   const repeatMode = usePlayer((s) => s.repeatMode);
   const cycleRepeatMode = usePlayer((s) => s.cycleRepeatMode);
   const eqEnabled = usePlayer((s) => s.eqEnabled);
@@ -213,7 +263,8 @@ export function PlayerBar() {
         // 先読み要素が予定より長く鳴り続けた場合（メイン側の停止・スタール等）は
         // 二重再生を防ぐため先読みを中断する
         const element = event.currentTarget as HTMLAudioElement;
-        if (element === getSecondaryAudio() && element.currentTime > 6) {
+        const overrunLimit = usePlayer.getState().crossfadeLong ? 10 : 6;
+        if (element === getSecondaryAudio() && element.currentTime > overrunLimit) {
           usePlayer.getState().cancelPreload();
         }
         return;
@@ -710,6 +761,70 @@ export function PlayerBar() {
                         </div>
                       ))}
                     </div>
+
+                    {desktopApp ? (
+                      <>
+                        <div className="my-2 h-px bg-dopa-800" />
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] font-bold text-zinc-400">
+                            スタジオモード
+                          </span>
+                          <span className="bg-rainbow animate-rainbow rounded-full px-1.5 py-0.5 text-[9px] font-black text-dopa-950">
+                            DESKTOP
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-col gap-2 px-1">
+                          <StudioSlider
+                            label="ボーカル除去（カラオケ）"
+                            value={studio.vocal}
+                            min={0}
+                            max={100}
+                            step={5}
+                            format={(value) => `${value}%`}
+                            onChange={(value) => setStudio({ vocal: value })}
+                          />
+                          <StudioSlider
+                            label="低音ブースト+"
+                            value={studio.bass}
+                            min={0}
+                            max={15}
+                            step={1}
+                            format={(value) => (value > 0 ? `+${value}dB` : "±0dB")}
+                            onChange={(value) => setStudio({ bass: value })}
+                          />
+                          <StudioSlider
+                            label="リバーブ"
+                            value={studio.reverb}
+                            min={0}
+                            max={100}
+                            step={5}
+                            format={(value) => `${value}%`}
+                            onChange={(value) => setStudio({ reverb: value })}
+                          />
+                          <label className="flex cursor-pointer items-center justify-between text-[11px] text-zinc-300">
+                            8Dオーディオ（回転サウンド）
+                            <input
+                              type="checkbox"
+                              checked={studio.eightD}
+                              onChange={(event) => setStudio({ eightD: event.target.checked })}
+                              className="accent-fuchsia-500"
+                            />
+                          </label>
+                          <label className="flex cursor-pointer items-center justify-between text-[11px] text-zinc-300">
+                            ロングミックス（6秒クロスフェード）
+                            <input
+                              type="checkbox"
+                              checked={crossfadeLong}
+                              onChange={(event) => setCrossfadeLong(event.target.checked)}
+                              className="accent-fuchsia-500"
+                            />
+                          </label>
+                        </div>
+                        <p className="mt-2 px-1 text-[10px] leading-tight text-zinc-500">
+                          デスクトップアプリ専用の高音質エフェクトです（Chrome/ElectronのWeb Audioで動作）。※モノラル音源はボーカル除去100%で無音になります
+                        </p>
+                      </>
+                    ) : null}
 
                     <p className="mt-2 px-1 text-[10px] leading-tight text-zinc-500">
                       iPhoneではサウンド設定ON中はバックグラウンド再生が不安定になる場合があります（OFFで通常通り）
