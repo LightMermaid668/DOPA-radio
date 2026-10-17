@@ -29,11 +29,8 @@ import {
   swapAudioRoles,
   trackSrc,
 } from "@/lib/player-audio";
-import {
-  findBeatAlignOffset,
-  getCachedSpectrogram,
-  spectrogramTarget,
-} from "@/lib/spectrogram";
+import { getCachedSpectrogram, findBeatAlignOffset, spectrogramTarget } from "@/lib/spectrogram";
+import { playerLog } from "@/lib/player-log";
 
 const RATE_KEY = "dopa:playback-rate";
 const PITCH_KEY = "dopa:preserves-pitch";
@@ -225,6 +222,7 @@ function cancelOverlap() {
   if (overlapNextIndex === null) return;
   overlapNextIndex = null;
   overlapStartPosition = 0;
+  clearOverlapWatchdog();
   // AIミックスのフィルターを元に戻す
   const main = getAudio();
   if (main) resetAiMix(main);
@@ -232,6 +230,76 @@ function cancelOverlap() {
   if (secondary) {
     retireAudioElement(secondary);
   }
+}
+
+// オーバーラップの進行的ウォッチドッグ（'ended'取りこぼし・先読み停止の保険）
+let overlapWatchdog: number | null = null;
+
+function clearOverlapWatchdog() {
+  if (overlapWatchdog !== null && typeof window !== "undefined") {
+    window.clearTimeout(overlapWatchdog);
+  }
+  overlapWatchdog = null;
+}
+
+/**
+ * 予期せぬ停止（割り込み・バッファ停止など）を検知して自動復旧する定期監視。
+ * 最初の再生開始時に一度だけ起動する。
+ */
+let stallWatchdogTimer: number | null = null;
+
+function ensureStallWatchdog() {
+  if (stallWatchdogTimer !== null || typeof window === "undefined") return;
+  stallWatchdogTimer = window.setInterval(() => {
+    const { isPlaying } = usePlayer.getState();
+    if (!isPlaying) return;
+
+    // 1) 先読み（次曲）が止まっていたら再開を試みる
+    if (overlapNextIndex !== null) {
+      const secondary = getSecondaryAudio();
+      if (
+        secondary &&
+        secondary.paused &&
+        !secondary.ended &&
+        secondary.readyState >= 2 &&
+        secondary.duration > 0 &&
+        secondary.currentTime < secondary.duration - 1
+      ) {
+        playerLog("preload stalled, resuming");
+        secondary.play().catch(() => cancelOverlap());
+      }
+    }
+
+    const main = getAudio();
+    if (!main || !main.src || main.src.includes("silence.wav")) return;
+
+    // 2) 曲の終端付近で止まったのに 'ended' が来ない場合は次へ進める
+    if (
+      main.paused &&
+      !main.ended &&
+      main.readyState >= 2 &&
+      Number.isFinite(main.duration) &&
+      main.duration > 0 &&
+      main.currentTime >= main.duration - 0.5 &&
+      overlapNextIndex === null
+    ) {
+      playerLog("end-of-track stall detected, advancing");
+      usePlayer.getState().advanceToNext();
+      return;
+    }
+
+    // 3) メインが途中で予期せず止まっていたら再開する
+    if (
+      main.paused &&
+      !main.ended &&
+      main.readyState >= 2 &&
+      !main.error &&
+      overlapNextIndex === null
+    ) {
+      playerLog("main stalled, resuming");
+      playWithRetry(main, 0);
+    }
+  }, 1500);
 }
 
 /**
@@ -242,6 +310,7 @@ function cancelOverlap() {
 function advanceOverlap(): boolean {
   const nextIndex = overlapNextIndex;
   overlapNextIndex = null;
+  clearOverlapWatchdog();
   if (nextIndex === null) return false;
 
   const { queue, rate, preservesPitch, pitchSemitones } = usePlayer.getState();
@@ -257,6 +326,7 @@ function advanceOverlap(): boolean {
 
   if (!incoming || incoming.error || !incoming.src || incoming.paused) {
     // 先読みが失敗していたら通常の開始に任せる
+    playerLog("overlap fallback: restarting next track");
     if (incoming) {
       retireAudioElement(incoming);
     }
@@ -265,6 +335,7 @@ function advanceOverlap(): boolean {
     return true;
   }
 
+  playerLog("overlap promoted");
   const oldMain = getAudio();
   swapAudioRoles();
   if (oldMain) {
@@ -448,6 +519,8 @@ function startTrack(
 
   // 新しい再生が始まるので先読み（クロスフェード）は中断
   cancelOverlap();
+  // 予期せぬ停止からの自動復旧監視を起動（初回のみ）
+  ensureStallWatchdog();
 
   if (track.kind === "spotify") {
     getAudio()?.pause();
@@ -1093,6 +1166,31 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       secondary,
       state.aiMix ? { rate: mixRate, preservesPitch: true } : { rate, preservesPitch },
     );
+
+    // 'ended' を取りこぼしても必ず進むようにウォッチドッグを仕掛ける
+    clearOverlapWatchdog();
+    overlapWatchdog = window.setTimeout(() => {
+      overlapWatchdog = null;
+      if (overlapNextIndex === null) return;
+      // ユーザーが一時停止している場合は何もしない（再開時に通常フローが処理する）
+      if (!usePlayer.getState().isPlaying) return;
+      const currentMain = getAudio();
+      const mainFinished =
+        !currentMain ||
+        currentMain.ended ||
+        (Number.isFinite(currentMain.duration) &&
+          currentMain.duration > 0 &&
+          currentMain.currentTime >= currentMain.duration - 0.5) ||
+        (currentMain.paused && (currentMain.duration || 0) > 0);
+      if (mainFinished) {
+        // 昇格 or 失敗時は通常開始にフォールバックして必ず次へ進む
+        playerLog("overlap watchdog: advancing");
+        usePlayer.getState().advanceToNext();
+      } else {
+        playerLog("overlap watchdog: cancel");
+        cancelOverlap();
+      }
+    }, (overlapSec + 3) * 1000);
 
     const clearOnError = () => {
       secondary.removeEventListener("error", clearOnError);

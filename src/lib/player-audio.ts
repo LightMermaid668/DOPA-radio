@@ -69,11 +69,18 @@ export function warmUpSecondaryAudio(): boolean {
       .play()
       .then(() => {
         secondaryWarmed = true;
-        // 無音を鳴らし続ける必要はない（許可を得るだけでよい）
-        try {
-          secondary.pause();
-        } catch {
-          /* ignore */
+        // ウォームアップ中に本番の先読み再生が始まっていたら止めない
+        const current = getSecondaryAudio();
+        if (
+          current === secondary &&
+          secondary.src.includes("silence.wav") &&
+          !secondary.paused
+        ) {
+          try {
+            secondary.pause();
+          } catch {
+            /* ignore */
+          }
         }
       })
       .catch(() => {

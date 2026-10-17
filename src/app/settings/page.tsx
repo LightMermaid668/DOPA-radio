@@ -7,6 +7,7 @@ import { ArrowLeft, Music4, TriangleAlert } from "lucide-react";
 
 import pkg from "../../../package.json";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { PlayerLogViewer } from "@/components/settings/player-log-viewer";
 import { SpotifyConnect } from "@/components/settings/spotify-connect";
 import { db } from "@/db";
 import { integrations } from "@/db/schema";
@@ -77,6 +78,8 @@ export default async function SettingsPage({
             Apple Music / Spotify 連携で追加してください。
           </p>
         </section>
+
+        <PlayerLogViewer />
 
         {isAdminEmail(session.user.email) ? (
           <Link

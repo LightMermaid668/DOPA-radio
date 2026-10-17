@@ -315,7 +315,14 @@ export function PlayerBar() {
       usePlayer.setState({ isPlaying: false });
     };
     const handleEnded = (event: Event) => {
-      if (!isMainEvent(event)) return;
+      if (!isMainEvent(event)) {
+        // 先読み中の次曲が先に終わってしまった場合（超短い曲など）は昇格して進める
+        const element = event.currentTarget as HTMLAudioElement;
+        if (element === getSecondaryAudio() && usePlayer.getState().isPlaying) {
+          usePlayer.getState().advanceToNext();
+        }
+        return;
+      }
       usePlayer.getState().advanceToNext();
     };
     const handleLoaded = (event: Event) => {
