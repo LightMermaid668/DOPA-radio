@@ -39,5 +39,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: dopa-radio-${{ matrix.target }}
-          path: desktop/dist/**
+          path: |
+            desktop/dist/**
+            desktop/INSTALL.txt
           if-no-files-found: error
