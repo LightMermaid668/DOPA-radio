@@ -1,9 +1,11 @@
 import { Headphones, Link2, ListMusic, UploadCloud } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { Logo } from "@/components/logo";
 import { StandaloneRedirect } from "@/components/standalone-redirect";
 import { buttonVariants } from "@/components/ui/button";
+import { getSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 const FEATURES = [
@@ -35,7 +37,11 @@ const FEATURES = [
 
 export const dynamic = "force-dynamic";
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // ログイン済みならランディングを見せずにアプリ本体へ直行する
+  const session = await getSession();
+  if (session) redirect("/home");
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6">
       <StandaloneRedirect />
