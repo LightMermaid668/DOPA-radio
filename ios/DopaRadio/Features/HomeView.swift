@@ -132,6 +132,11 @@ struct HomeView: View {
                         .listRowBackground(DopaColor.background)
                         .listRowSeparatorTint(DopaColor.border)
                         .contextMenu {
+                            Button {
+                                player.playNext(track.toPlayerTrack)
+                            } label: {
+                                Label("次に再生", systemImage: "arrow.turn.down.right")
+                            }
                             if downloads.isDownloaded(track.trackId) {
                                 Button(role: .destructive) {
                                     downloads.delete(track.trackId)
@@ -159,16 +164,8 @@ struct HomeView: View {
             playPinned(card)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                ZStack {
-                    if let url = card.artworkURL {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            cardPlaceholder
-                        }
-                    } else {
-                        cardPlaceholder
-                    }
+                CachedArtwork(url: card.artworkURL) {
+                    cardPlaceholder
                 }
                 .frame(width: 104, height: 104)
                 .clipShape(RoundedRectangle(cornerRadius: 12))

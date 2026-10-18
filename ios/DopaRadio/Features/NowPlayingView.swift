@@ -3,33 +3,47 @@ import SwiftUI
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerEngine
     @ObservedObject private var settings = AudioSettingsStore.shared
-    @Environment(\.dismiss) private var dismiss
 
     @State private var isSeeking = false
     @State private var seekValue: Double = 0
     @State private var showStudio = false
     @State private var showSpeedPitch = false
+    @State private var showQueue = false
+    @State private var showSleepTimer = false
+    @State private var sleepTimerEndsAt: Date?
+    @State private var sleepTimerTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
             DopaColor.background.ignoresSafeArea()
 
+            // アートワークのブラー背景（Apple Music風）
+            CachedArtwork(url: player.currentTrack?.artworkURL) {
+                Color.clear
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .blur(radius: 60)
+            .opacity(0.3)
+            .ignoresSafeArea()
+            .animation(.easeInOut(duration: 0.6), value: player.currentTrack?.id)
+
             if let track = player.currentTrack {
                 VStack(spacing: 0) {
-                    // グラバー
-                    Capsule()
-                        .fill(DopaColor.border)
-                        .frame(width: 40, height: 5)
-                        .padding(.top, 12)
+                    Spacer(minLength: 16)
 
-                    Spacer(minLength: 24)
-
-                    artwork(track)
-                        .frame(maxWidth: 320, maxHeight: 320)
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
-                        .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
-                        .scaleEffect(player.isPlaying ? 1.0 : 0.92)
-                        .animation(.spring(duration: 0.5), value: player.isPlaying)
+                    Button {
+                        player.togglePlay()
+                    } label: {
+                        artwork(track)
+                            .frame(maxWidth: 320, maxHeight: 320)
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                            .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+                            .scaleEffect(player.isPlaying ? 1.0 : 0.92)
+                            .animation(.spring(duration: 0.5), value: player.isPlaying)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(player.isPlaying ? "一時停止" : "再生")
 
                     VStack(spacing: 6) {
                         Text(track.title)
@@ -111,19 +125,28 @@ struct NowPlayingView: View {
         .sheet(isPresented: $showSpeedPitch) {
             SpeedPitchSheet()
         }
+        .sheet(isPresented: $showQueue) {
+            QueueSheet()
+                .environmentObject(player)
+        }
+        .confirmationDialog(
+            "おやすみタイマー",
+            isPresented: $showSleepTimer,
+            titleVisibility: .visible
+        ) {
+            Button("15分後に停止") { setSleepTimer(minutes: 15) }
+            Button("30分後に停止") { setSleepTimer(minutes: 30) }
+            Button("60分後に停止") { setSleepTimer(minutes: 60) }
+            if sleepTimerEndsAt != nil {
+                Button("タイマーをオフ", role: .destructive) { setSleepTimer(minutes: nil) }
+            }
+            Button("キャンセル", role: .cancel) {}
+        }
     }
 
     private func artwork(_ track: PlayerTrack) -> some View {
-        Group {
-            if let url = track.artworkURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    placeholder
-                }
-            } else {
-                placeholder
-            }
+        CachedArtwork(url: track.artworkURL) {
+            placeholder
         }
     }
 
@@ -175,16 +198,63 @@ struct NowPlayingView: View {
                 ModeChip(label: "DJ", systemImage: "waveform.path", isOn: $settings.djMix)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 smallButton("スタジオ", systemImage: "slider.horizontal.3") {
                     showStudio = true
                 }
                 smallButton("速度・ピッチ", systemImage: "gauge.with.dots.needle.33percent") {
                     showSpeedPitch = true
                 }
-                smallButton("閉じる", systemImage: "chevron.down") {
-                    dismiss()
+                iconButton("list.bullet", label: "再生キュー") {
+                    showQueue = true
                 }
+                iconButton("moon.zzz", label: "おやすみタイマー") {
+                    showSleepTimer = true
+                }
+                AirPlayButton()
+                    .frame(width: 34, height: 34)
+                    .accessibilityLabel("AirPlay")
+            }
+
+            if let endsAt = sleepTimerEndsAt {
+                Text("おやすみタイマー: \(endsAt.formatted(date: .omitted, time: .shortened)) に停止")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func iconButton(
+        _ systemImage: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13))
+                .frame(width: 34, height: 34)
+                .background(DopaColor.card, in: Circle())
+                .overlay(Circle().stroke(DopaColor.border))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func setSleepTimer(minutes: Int?) {
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
+        guard let minutes else {
+            sleepTimerEndsAt = nil
+            return
+        }
+        Haptics.selection()
+        let endsAt = Date().addingTimeInterval(Double(minutes) * 60)
+        sleepTimerEndsAt = endsAt
+        sleepTimerTask = Task { [weak player] in
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60 * 1_000_000_000)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                player?.pause()
             }
         }
     }

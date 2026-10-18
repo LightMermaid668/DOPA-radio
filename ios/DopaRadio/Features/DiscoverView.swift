@@ -116,6 +116,13 @@ struct DiscoverView: View {
                         .buttonStyle(.plain)
                         .listRowBackground(DopaColor.background)
                         .listRowSeparatorTint(DopaColor.border)
+                        .contextMenu {
+                            Button {
+                                player.playNext(track.toPlayerTrack)
+                            } label: {
+                                Label("次に再生", systemImage: "arrow.turn.down.right")
+                            }
+                        }
                     }
                 }
             }

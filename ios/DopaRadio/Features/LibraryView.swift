@@ -10,6 +10,8 @@ struct LibraryView: View {
     @State private var errorMessage: String?
     @State private var showDownloads = false
     @State private var showUpload = false
+    @State private var trackToDelete: TrackDTO?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -78,6 +80,31 @@ struct LibraryView: View {
         }) {
             UploadView()
         }
+        .confirmationDialog(
+            trackToDelete.map { "「\($0.title)」を削除しますか？" } ?? "",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("削除", role: .destructive) {
+                if let track = trackToDelete {
+                    Task { await deleteTrack(track) }
+                }
+            }
+            Button("キャンセル", role: .cancel) {
+                trackToDelete = nil
+            }
+        } message: {
+            Text("元に戻せません。ダウンロード済みの音源も端末から削除されます。")
+        }
+    }
+
+    private func deleteTrack(_ track: TrackDTO) async {
+        Haptics.tap()
+        _ = try? await APIClient.shared.send("/api/tracks/\(track.id)", method: "DELETE")
+        player.removeFromQueue(trackId: track.id)
+        downloads.delete(track.id)
+        trackToDelete = nil
+        await load()
     }
 
     private var list: some View {
@@ -103,6 +130,11 @@ struct LibraryView: View {
                 .listRowSeparatorTint(DopaColor.border)
                 .contextMenu {
                     Button {
+                        player.playNext(track.toPlayerTrack)
+                    } label: {
+                        Label("次に再生", systemImage: "arrow.turn.down.right")
+                    }
+                    Button {
                         Task { await togglePin(track) }
                     } label: {
                         Label(
@@ -122,6 +154,13 @@ struct LibraryView: View {
                         } label: {
                             Label("ダウンロード", systemImage: "arrow.down.circle")
                         }
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                        trackToDelete = track
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("削除", systemImage: "trash")
                     }
                 }
             }

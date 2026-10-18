@@ -63,16 +63,8 @@ struct MiniPlayerBar: View {
     }
 
     private func artwork(_ track: PlayerTrack) -> some View {
-        Group {
-            if let url = track.artworkURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    placeholder
-                }
-            } else {
-                placeholder
-            }
+        CachedArtwork(url: track.artworkURL) {
+            placeholder
         }
     }
 

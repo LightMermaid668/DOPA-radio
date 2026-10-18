@@ -1,4 +1,18 @@
+import AVKit
 import SwiftUI
+
+/// AirPlay出力先ボタン（iOSネイティブ）
+struct AirPlayButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.tintColor = .secondaryLabel
+        view.activeTintColor = UIColor(DopaColor.accent)
+        view.prioritizesVideoDevices = false
+        return view
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
 
 func formatDuration(_ seconds: Int?) -> String {
     guard let seconds, seconds > 0 else { return "--:--" }
@@ -21,6 +35,7 @@ struct ModeChip: View {
 
     var body: some View {
         Button {
+            Haptics.selection()
             isOn.toggle()
         } label: {
             HStack(spacing: 5) {
@@ -104,16 +119,8 @@ struct TrackRowView: View {
     }
 
     private var artwork: some View {
-        Group {
-            if let artworkURL {
-                AsyncImage(url: artworkURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    placeholder
-                }
-            } else {
-                placeholder
-            }
+        CachedArtwork(url: artworkURL) {
+            placeholder
         }
     }
 
@@ -168,6 +175,7 @@ struct SaveButton: View {
                 )
             }
             saved = next
+            Haptics.selection()
         } catch {
             // 失敗時は状態を変えない
         }
@@ -187,6 +195,7 @@ struct SavedPinButton: View {
                 _ = try? await APIClient.shared.send(
                     "/api/saved-tracks/\(trackId)", method: "PATCH", body: Body(pinned: !pinned)
                 )
+                Haptics.selection()
                 onChange()
             }
         } label: {

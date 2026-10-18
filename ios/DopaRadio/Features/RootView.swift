@@ -49,9 +49,13 @@ struct RootView: View {
                 .tabItem { Label("検索", systemImage: "magnifyingglass") }
                 .tag(4)
         }
-        .fullScreenCover(isPresented: $showNowPlaying) {
+        .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
                 .environmentObject(player)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
+                .presentationBackground(DopaColor.background)
         }
         .tint(DopaColor.accent)
     }

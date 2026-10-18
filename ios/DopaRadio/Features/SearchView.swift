@@ -134,6 +134,13 @@ struct SearchView: View {
         .disabled(!track.ready)
         .listRowBackground(DopaColor.background)
         .listRowSeparatorTint(DopaColor.border)
+        .contextMenu {
+            Button {
+                player.playNext(track.toPlayerTrack)
+            } label: {
+                Label("次に再生", systemImage: "arrow.turn.down.right")
+            }
+        }
     }
 
     private func playTrack(_ track: SearchTrackDTO, list: [SearchTrackDTO]) {

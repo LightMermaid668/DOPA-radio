@@ -49,6 +49,12 @@ final class PlayerEngine: ObservableObject {
 
     var hasNext: Bool { index + 1 < queue.count }
 
+    /// 次に再生される曲（キュー表示用）
+    var upNext: [PlayerTrack] {
+        guard queue.indices.contains(index) else { return [] }
+        return Array(queue.dropFirst(index + 1))
+    }
+
     // MARK: - Private
 
     private let playerA = AVPlayer()
@@ -177,6 +183,38 @@ final class PlayerEngine: ObservableObject {
         startCurrent(from: 0)
     }
 
+    /// キュー内の指定位置へジャンプ
+    func playIndex(_ target: Int) {
+        guard queue.indices.contains(target), target != index else { return }
+        Haptics.tap()
+        cancelCrossfade()
+        index = target
+        startCurrent(from: 0)
+    }
+
+    /// 「次に再生」: 現在の曲の直後に割り込む（既にキューにあれば移動）
+    func playNext(_ track: PlayerTrack) {
+        Haptics.tap()
+        guard let currentId = currentTrack?.id else {
+            play(tracks: [track], startAt: 0)
+            return
+        }
+        if let existing = queue.firstIndex(where: { $0.id == track.id }) {
+            let removedBeforeCurrent = existing < index
+            queue.remove(at: existing)
+            if removedBeforeCurrent { index -= 1 }
+        }
+        let currentPosition = queue.firstIndex(where: { $0.id == currentId }) ?? index
+        queue.insert(track, at: min(currentPosition + 1, queue.count))
+    }
+
+    /// おやすみタイマーなどで使用
+    func pause() {
+        main.pause()
+        isPlaying = false
+        updateNowPlaying(force: true)
+    }
+
     func seek(to seconds: Double) {
         guard seconds.isFinite else { return }
         main.seek(
@@ -295,6 +333,16 @@ final class PlayerEngine: ObservableObject {
                 }
             }
         }
+
+        // DJミックスのテンポ同期用にBPMを解析（バックグラウンド・結果はキャッシュ）
+        if settings.djMix, track.directURL == nil {
+            if let url = track.streamURL {
+                TempoAnalyzer.analyze(trackId: track.id, url: url)
+            }
+            if queue.indices.contains(index + 1), let url = queue[index + 1].streamURL {
+                TempoAnalyzer.analyze(trackId: queue[index + 1].id, url: url)
+            }
+        }
     }
 
     private func cancelCrossfade() {
@@ -324,12 +372,26 @@ final class PlayerEngine: ObservableObject {
         let next = secondary
         let item = AVPlayerItem(url: url)
         item.audioTimePitchAlgorithm = settings.preservesPitch ? .spectral : .varispeed
-        next.defaultRate = Float(clampedRate(settings.userRate))
+
+        // DJミックス: BPMが分かっていればテンポを合わせる（キーロック）
+        var incomingRate = clampedRate(settings.userRate)
+        if settings.djMix, let currentPlayTrack = currentTrack {
+            let bpmA = TempoAnalyzer.cachedBPM(trackId: currentPlayTrack.id)
+            let bpmB = TempoAnalyzer.cachedBPM(trackId: queue[nextIndex].id)
+            if let bpmA, let bpmB, bpmB > 0 {
+                let ratio = bpmA / bpmB
+                if ratio >= 0.9 && ratio <= 1.12 {
+                    incomingRate = clampedRate(settings.userRate * ratio)
+                }
+            }
+        }
+
+        next.defaultRate = Float(incomingRate)
         next.replaceCurrentItem(with: item)
         next.volume = 0
         next.play()
-        if settings.userRate != 1 {
-            next.rate = Float(clampedRate(settings.userRate))
+        if incomingRate != 1 {
+            next.rate = Float(incomingRate)
         }
 
         // 入ってくる側のスタジオ（DJミックス時は最初ベースを抜く）
@@ -388,6 +450,11 @@ final class PlayerEngine: ObservableObject {
         index = nextIndex
         progress = 0
         isPlaying = true
+
+        // テンポ同期で変えていた速度をユーザー設定に戻す
+        let userRate = Float(clampedRate(settings.userRate))
+        main.defaultRate = userRate
+        main.rate = userRate
         updateNowPlaying(force: true)
     }
 

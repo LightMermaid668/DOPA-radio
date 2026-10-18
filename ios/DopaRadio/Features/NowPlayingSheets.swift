@@ -1,5 +1,90 @@
 import SwiftUI
 
+/// 再生キュー（再生中と次に再生の一覧・タップでジャンプ・スワイプで削除）
+struct QueueSheet: View {
+    @EnvironmentObject private var player: PlayerEngine
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let current = player.currentTrack {
+                    Section("再生中") {
+                        row(current, isCurrent: true)
+                            .listRowBackground(DopaColor.background)
+                            .listRowSeparatorTint(DopaColor.border)
+                    }
+                }
+
+                Section("次に再生（\(player.upNext.count)曲）") {
+                    if player.upNext.isEmpty {
+                        Text("この曲で最後です（ドパモードONで自動追加）")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(player.upNext.enumerated()), id: \.element.id) { offset, track in
+                            Button {
+                                player.playIndex(player.index + 1 + offset)
+                                dismiss()
+                            } label: {
+                                row(track, isCurrent: false)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(DopaColor.background)
+                            .listRowSeparatorTint(DopaColor.border)
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    player.removeFromQueue(trackId: track.id)
+                                } label: {
+                                    Label("削除", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(DopaColor.background)
+            .navigationTitle("再生キュー")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func row(_ track: PlayerTrack, isCurrent: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: isCurrent ? "speaker.wave.2.fill" : "music.note")
+                .font(.system(size: 12))
+                .foregroundStyle(isCurrent ? DopaColor.accent : Color.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title)
+                    .font(.subheadline.weight(isCurrent ? .bold : .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(isCurrent ? DopaColor.accent : .primary)
+                Text(track.artist ?? "アーティスト不明")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Text(formatDuration(track.durationSec))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+        }
+        .contentShape(Rectangle())
+    }
+}
+
 /// スタジオ（ネイティブDSP: EQ・低音ブースト・ボーカル除去・8D）
 struct StudioSheet: View {
     @ObservedObject private var settings = AudioSettingsStore.shared
