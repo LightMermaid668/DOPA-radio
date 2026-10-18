@@ -3,6 +3,7 @@ import SwiftUI
 /// ホーム: ピン留め（自分の曲＋保存した曲）と保存した曲一覧
 struct HomeView: View {
     @EnvironmentObject private var player: PlayerEngine
+    @ObservedObject private var downloads = DownloadStore.shared
 
     @State private var savedTracks: [SavedTrackDTO] = []
     @State private var ownTracks: [TrackDTO] = []
@@ -130,6 +131,21 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                         .listRowBackground(DopaColor.background)
                         .listRowSeparatorTint(DopaColor.border)
+                        .contextMenu {
+                            if downloads.isDownloaded(track.trackId) {
+                                Button(role: .destructive) {
+                                    downloads.delete(track.trackId)
+                                } label: {
+                                    Label("ダウンロードを削除", systemImage: "trash")
+                                }
+                            } else if track.ready {
+                                Button {
+                                    downloads.download(track)
+                                } label: {
+                                    Label("ダウンロード", systemImage: "arrow.down.circle")
+                                }
+                            }
+                        }
                     }
                 }
             }

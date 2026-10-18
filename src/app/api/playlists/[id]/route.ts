@@ -40,6 +40,8 @@ export async function GET(
       durationSec: tracks.durationSec,
       status: tracks.status,
       artworkKey: tracks.artworkKey,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
     })
     .from(playlistItems)
     .leftJoin(tracks, eq(playlistItems.trackId, tracks.id))

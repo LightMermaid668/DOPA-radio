@@ -57,7 +57,7 @@ struct TrackDTO: Codable, Identifiable {
             artworkURL: artworkURL,
             chorusStartSec: chorusStartSec,
             chorusEndSec: chorusEndSec,
-            localURL: nil
+            localURL: DownloadStore.shared.localURL(for: id)
         )
     }
 }
@@ -128,6 +128,8 @@ struct OwnPlaylistItemDTO: Codable, Identifiable {
     let durationSec: Int?
     let status: String?
     let artworkKey: String?
+    let chorusStartSec: Int?
+    let chorusEndSec: Int?
 }
 
 struct PublicPlaylistResponse: Codable {
@@ -215,7 +217,7 @@ struct PlaylistDisplayItem: Identifiable {
                 artworkURL: artworkURL,
                 chorusStartSec: chorusStartSec,
                 chorusEndSec: chorusEndSec,
-                localURL: nil,
+                localURL: DownloadStore.shared.localURL(for: trackId),
                 directURL: nil
             )
         }
@@ -270,7 +272,7 @@ struct DiscoverTrackDTO: Codable, Identifiable {
             artworkURL: artworkURL,
             chorusStartSec: chorusStartSec,
             chorusEndSec: chorusEndSec,
-            localURL: nil,
+            localURL: DownloadStore.shared.localURL(for: id),
             directURL: nil
         )
     }
@@ -318,7 +320,7 @@ struct SavedTrackDTO: Codable, Identifiable {
             artworkURL: artworkURL,
             chorusStartSec: chorusStartSec,
             chorusEndSec: chorusEndSec,
-            localURL: nil,
+            localURL: DownloadStore.shared.localURL(for: id),
             directURL: nil
         )
     }
@@ -358,7 +360,7 @@ struct SearchTrackDTO: Codable, Identifiable {
             artworkURL: artworkURL,
             chorusStartSec: chorusStartSec,
             chorusEndSec: chorusEndSec,
-            localURL: nil,
+            localURL: DownloadStore.shared.localURL(for: id),
             directURL: nil
         )
     }
@@ -371,4 +373,36 @@ struct SearchPlaylistDTO: Codable, Identifiable {
     let ownerName: String?
     let itemCount: Int
     let own: Bool
+}
+
+// MARK: - ドパモード（ラジオ）
+
+struct RadioNextResponse: Codable {
+    let tracks: [RadioTrackDTO]
+}
+
+struct RadioTrackDTO: Codable, Identifiable {
+    let id: String
+    let title: String
+    let artist: String?
+    let durationSec: Int?
+    let hasArtwork: Bool
+    let chorusStartSec: Int?
+    let chorusEndSec: Int?
+
+    var toPlayerTrack: PlayerTrack {
+        PlayerTrack(
+            id: id,
+            title: title,
+            artist: artist,
+            durationSec: durationSec,
+            artworkURL: hasArtwork
+                ? URL(string: "\(APIClient.baseURL.absoluteString)/api/tracks/\(id)/artwork")
+                : nil,
+            chorusStartSec: chorusStartSec,
+            chorusEndSec: chorusEndSec,
+            localURL: DownloadStore.shared.localURL(for: id),
+            directURL: nil
+        )
+    }
 }

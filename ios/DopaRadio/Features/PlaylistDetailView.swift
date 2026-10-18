@@ -227,8 +227,8 @@ struct PlaylistDetailView: View {
                 externalArtworkURL: external?.artworkUrl.flatMap { URL(string: $0) },
                 deepLink: external?.deepLink.flatMap { URL(string: $0) },
                 previewURL: external?.previewUrl.flatMap { URL(string: $0) },
-                chorusStartSec: nil,
-                chorusEndSec: nil,
+                chorusStartSec: item.chorusStartSec,
+                chorusEndSec: item.chorusEndSec,
                 saved: false
             )
         }

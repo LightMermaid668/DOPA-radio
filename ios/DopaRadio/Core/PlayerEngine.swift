@@ -23,6 +23,16 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    /// サビだけモード（サビ範囲が設定された曲はサビ部分だけ再生）
+    @Published var chorusOnly: Bool {
+        didSet { UserDefaults.standard.set(chorusOnly, forKey: "dopa.chorus") }
+    }
+
+    /// ドパモード（キューが終わると似てる曲を自動追加）
+    @Published var dopaMode: Bool {
+        didSet { UserDefaults.standard.set(dopaMode, forKey: "dopa.dopa") }
+    }
+
     var crossfadeSeconds: Double = 3.0
 
     var currentTrack: PlayerTrack? {
@@ -46,9 +56,18 @@ final class PlayerEngine: ObservableObject {
     private var lastNowPlayingUpdate = Date.distantPast
     private var lastArtworkTrackId: String?
 
+    // サビだけ / フェード / ドパモード用
+    private var effectiveEndSec: Double?
+    private var chorusFadeArmed = false
+    private var volumeFadeTask: Task<Void, Never>?
+    private var radioFetching = false
+    private var radioCooldownUntil = Date.distantPast
+
     init() {
         crossfadeEnabled =
             (UserDefaults.standard.object(forKey: "dopa.crossfade") as? Bool) ?? true
+        chorusOnly = (UserDefaults.standard.object(forKey: "dopa.chorus") as? Bool) ?? false
+        dopaMode = (UserDefaults.standard.object(forKey: "dopa.dopa") as? Bool) ?? false
 
         for player in [playerA, playerB] {
             player.actionAtItemEnd = .pause
@@ -88,12 +107,17 @@ final class PlayerEngine: ObservableObject {
         if index + 1 < queue.count {
             index += 1
             startCurrent(from: 0)
-        } else {
-            main.pause()
-            isPlaying = false
-            progress = 0
-            updateNowPlaying(force: true)
+            return
         }
+        if dopaMode {
+            // 似てる曲を取ってきて続ける
+            Task { await extendWithRadio() }
+            return
+        }
+        main.pause()
+        isPlaying = false
+        progress = 0
+        updateNowPlaying(force: true)
     }
 
     func previous() {
@@ -145,12 +169,33 @@ final class PlayerEngine: ObservableObject {
         let item = AVPlayerItem(url: url)
         main.replaceCurrentItem(with: item)
         main.volume = 1
-        if position > 0 {
-            main.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+        effectiveEndSec = nil
+        chorusFadeArmed = false
+
+        // サビだけモード: 終端をサビ終わりにして、開始はサビ頭から
+        var seekTarget = position
+        if chorusOnly, let start = track.chorusStartSec, let end = track.chorusEndSec,
+            end - start >= 5
+        {
+            effectiveEndSec = Double(end)
+            item.forwardPlaybackEndTime = CMTime(seconds: Double(end), preferredTimescale: 600)
+            if start > 1, position <= 3 {
+                seekTarget = Double(start)
+            }
+        }
+
+        if seekTarget > 0 {
+            main.seek(to: CMTime(seconds: seekTarget, preferredTimescale: 600))
         }
         main.play()
         isPlaying = true
         playbackError = nil
+
+        // サビ頭・頭出し時はフェードイン（ネイティブは音量が使える）
+        if chorusOnly, seekTarget > 1, position <= 3 {
+            main.volume = 0
+            rampVolume(to: 1, duration: 0.8)
+        }
         updateNowPlaying(force: true)
     }
 
@@ -243,27 +288,135 @@ final class PlayerEngine: ObservableObject {
             duration = itemDuration
         }
 
+        // サビだけモードではサビ終わりが実質の終端
+        let endTime: Double
+        if let effectiveEndSec {
+            endTime = effectiveEndSec
+        } else if itemDuration.isFinite {
+            endTime = itemDuration
+        } else {
+            endTime = 0
+        }
+
+        // 終端に達したら次へ進む（'ended'が来なくても必ず進む）
+        if isPlaying, endTime > 0, progress >= endTime - 0.12, !isCrossfading {
+            if pendingNextIndex != nil {
+                secondary.volume = 1
+                completeCrossfade()
+            } else {
+                next(userInitiated: false)
+            }
+            return
+        }
+
         // 予期せぬ停止からの復帰（割り込み等）
         if isPlaying && main.rate == 0 && item.status == .readyToPlay
             && !isCrossfading
-            && progress < duration - 1
+            && (endTime == 0 || progress < endTime - 1)
         {
             main.play()
         }
 
-        // クロスフェード開始判定
+        // クロスフェード開始判定（終端 = サビ終わりの場合はそこを基準にする）
         if isPlaying, crossfadeEnabled, pendingNextIndex == nil,
-            itemDuration.isFinite, itemDuration > crossfadeSeconds + 1,
-            itemDuration - progress <= crossfadeSeconds,
+            endTime > crossfadeSeconds + 1,
+            endTime - progress <= crossfadeSeconds,
             hasNext
         {
             beginCrossfade()
         }
 
+        // サビだけモードの終端フェードアウト（クロスフェード中は任せる）
+        if chorusOnly, effectiveEndSec != nil, isPlaying, !isCrossfading, !chorusFadeArmed {
+            let remaining = endTime - progress
+            if remaining <= 0.9, remaining > 0.05 {
+                chorusFadeArmed = true
+                rampVolume(to: 0, duration: max(0.15, remaining - 0.05))
+            }
+        }
+
+        // ドパモードの先読み
+        maybePrefetchRadio()
+
         // Now Playing は1秒に1回程度更新
         if Date().timeIntervalSince(lastNowPlayingUpdate) >= 1 {
             updateNowPlaying()
         }
+    }
+
+    // MARK: - 音量フェード（サビメドレー用 / ネイティブ音量）
+
+    private func rampVolume(to target: Float, duration: Double) {
+        volumeFadeTask?.cancel()
+        let start = main.volume
+        let steps = 24
+        let stepNanos = UInt64(max(0.02, duration / Double(steps)) * 1_000_000_000)
+        volumeFadeTask = Task { [weak self] in
+            guard let self else { return }
+            for step in 1...steps {
+                try? await Task.sleep(nanoseconds: stepNanos)
+                if Task.isCancelled { return }
+                let ratio = Float(step) / Float(steps)
+                self.main.volume = start + (target - start) * ratio
+            }
+        }
+    }
+
+    // MARK: - ドパモード（似てる曲の自動追加）
+
+    private func fetchRadioTracks() async -> [PlayerTrack] {
+        let seed = queue.last(where: { $0.localURL == nil })?.id
+        let exclude = queue.map { $0.id }.suffix(50).joined(separator: ",")
+        var path = "/api/radio/next?"
+        if let seed, let encoded = seed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "seed=\(encoded)&"
+        }
+        if let encodedExclude = exclude.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) {
+            path += "exclude=\(encodedExclude)"
+        }
+        do {
+            let response = try await APIClient.shared.get(path, as: RadioNextResponse.self)
+            return response.tracks.map { $0.toPlayerTrack }
+        } catch {
+            return []
+        }
+    }
+
+    private func maybePrefetchRadio() {
+        guard dopaMode, !radioFetching, Date() > radioCooldownUntil else { return }
+        guard index >= queue.count - 2 else { return }
+        radioFetching = true
+        Task { [weak self] in
+            guard let self else { return }
+            let additions = await self.fetchRadioTracks()
+            self.radioFetching = false
+            if additions.isEmpty {
+                self.radioCooldownUntil = Date().addingTimeInterval(60)
+                return
+            }
+            self.queue.append(contentsOf: additions)
+        }
+    }
+
+    private func extendWithRadio() async {
+        guard !radioFetching else { return }
+        radioFetching = true
+        let additions = await fetchRadioTracks()
+        radioFetching = false
+        guard !additions.isEmpty else {
+            radioCooldownUntil = Date().addingTimeInterval(60)
+            main.pause()
+            isPlaying = false
+            progress = 0
+            updateNowPlaying(force: true)
+            return
+        }
+        let startIndex = queue.count
+        queue.append(contentsOf: additions)
+        index = startIndex
+        startCurrent(from: 0)
     }
 
     // MARK: - 通知（曲の終端・割り込み・ルート変更）

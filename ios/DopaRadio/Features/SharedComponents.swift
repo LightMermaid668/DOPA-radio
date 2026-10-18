@@ -13,6 +13,30 @@ func formatTime(_ seconds: Double) -> String {
     return String(format: "%d:%02d", total / 60, total % 60)
 }
 
+/// モード切替チップ（クロスフェード / サビだけ / ドパ）
+struct ModeChip: View {
+    let label: String
+    let systemImage: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage).font(.system(size: 12))
+                Text(label).font(.caption2.weight(.semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isOn ? DopaColor.accent.opacity(0.15) : DopaColor.card, in: Capsule())
+            .overlay(Capsule().stroke(isOn ? DopaColor.accent : DopaColor.border))
+            .foregroundStyle(isOn ? DopaColor.accent : Color.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// 曲の行（ライブラリ・保存した曲・ディスカバー・検索で共用）
 struct TrackRowView: View {
     let title: String

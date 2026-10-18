@@ -3,10 +3,12 @@ import SwiftUI
 struct LibraryView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var player: PlayerEngine
+    @ObservedObject private var downloads = DownloadStore.shared
 
     @State private var tracks: [TrackDTO] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var showDownloads = false
 
     var body: some View {
         NavigationStack {
@@ -36,13 +38,22 @@ struct LibraryView: View {
             .navigationTitle("ライブラリ")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        player.crossfadeEnabled.toggle()
-                    } label: {
-                        Image(systemName: player.crossfadeEnabled
-                            ? "arrow.triangle.merge" : "arrow.triangle.branch")
+                    HStack(spacing: 0) {
+                        Button {
+                            player.crossfadeEnabled.toggle()
+                        } label: {
+                            Image(systemName: player.crossfadeEnabled
+                                ? "arrow.triangle.merge" : "arrow.triangle.branch")
+                        }
+                        .accessibilityLabel("クロスフェード")
+
+                        Button {
+                            showDownloads = true
+                        } label: {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        .accessibilityLabel("ダウンロード済み")
                     }
-                    .accessibilityLabel("クロスフェード")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -62,6 +73,10 @@ struct LibraryView: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showDownloads) {
+            DownloadsView()
+                .environmentObject(player)
+        }
     }
 
     private var list: some View {
@@ -79,7 +94,7 @@ struct LibraryView: View {
                         dimmed: !track.isReady,
                         isCurrent: player.currentTrack?.id == track.id,
                         isPlaying: player.isPlaying,
-                        trailing: statusTrailing(track)
+                        trailing: rowTrailing(track)
                     )
                 }
                 .buttonStyle(.plain)
@@ -94,6 +109,19 @@ struct LibraryView: View {
                             systemImage: "pin"
                         )
                     }
+                    if downloads.isDownloaded(track.id) {
+                        Button(role: .destructive) {
+                            downloads.delete(track.id)
+                        } label: {
+                            Label("ダウンロードを削除", systemImage: "trash")
+                        }
+                    } else if track.isReady {
+                        Button {
+                            downloads.download(track)
+                        } label: {
+                            Label("ダウンロード", systemImage: "arrow.down.circle")
+                        }
+                    }
                 }
             }
         }
@@ -101,7 +129,27 @@ struct LibraryView: View {
         .scrollContentBackground(.hidden)
     }
 
-    private func statusTrailing(_ track: TrackDTO) -> AnyView? {
+    private func rowTrailing(_ track: TrackDTO) -> AnyView? {
+        if downloads.isDownloading(track.id) {
+            return AnyView(
+                ZStack {
+                    Circle()
+                        .stroke(DopaColor.border, lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: downloads.progress[track.id] ?? 0)
+                        .stroke(DopaColor.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 18, height: 18)
+            )
+        }
+        if downloads.isDownloaded(track.id) {
+            return AnyView(
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(DopaColor.accent)
+            )
+        }
         guard !track.isReady else { return nil }
         return AnyView(
             Text(track.status == "processing" ? "変換中" : "失敗")

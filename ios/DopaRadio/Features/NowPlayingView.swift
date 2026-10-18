@@ -145,22 +145,27 @@ struct NowPlayingView: View {
     }
 
     private var bottomBar: some View {
-        HStack {
-            Toggle(isOn: $player.crossfadeEnabled) {
-                Label("クロスフェード", systemImage: "arrow.triangle.merge")
-                    .font(.footnote)
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                ModeChip(
+                    label: "クロスフェード", systemImage: "arrow.triangle.merge",
+                    isOn: $player.crossfadeEnabled
+                )
+                ModeChip(label: "サビだけ", systemImage: "scissors", isOn: $player.chorusOnly)
+                ModeChip(label: "ドパ", systemImage: "radio", isOn: $player.dopaMode)
             }
-            .toggleStyle(.switch)
-            .tint(DopaColor.accent)
-
-            Spacer()
 
             Button {
                 dismiss()
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 36, height: 36)
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.down")
+                    Text("閉じる")
+                }
+                .font(.footnote.weight(.semibold))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(DopaColor.card, in: Capsule())
             }
             .accessibilityLabel("閉じる")
         }
