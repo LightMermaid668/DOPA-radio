@@ -9,6 +9,7 @@ struct LibraryView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var showDownloads = false
+    @State private var showUpload = false
 
     var body: some View {
         NavigationStack {
@@ -37,6 +38,14 @@ struct LibraryView: View {
             .background(DopaColor.background)
             .navigationTitle("ライブラリ")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showUpload = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("アップロード")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
@@ -63,6 +72,11 @@ struct LibraryView: View {
         .sheet(isPresented: $showDownloads) {
             DownloadsView()
                 .environmentObject(player)
+        }
+        .sheet(isPresented: $showUpload, onDismiss: {
+            Task { await load() }
+        }) {
+            UploadView()
         }
     }
 

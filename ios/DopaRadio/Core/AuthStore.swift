@@ -47,6 +47,36 @@ final class AuthStore: ObservableObject {
         }
     }
 
+    func signInWithGoogle() async throws {
+        let tokens = try await GoogleSignInManager.signIn()
+
+        struct IdTokenBody: Encodable {
+            let token: String
+            let accessToken: String?
+        }
+        struct Body: Encodable {
+            let provider: String
+            let idToken: IdTokenBody
+        }
+
+        let (data, http) = try await APIClient.shared.request(
+            "/api/auth/sign-in/social",
+            method: "POST",
+            body: Body(
+                provider: "google",
+                idToken: IdTokenBody(token: tokens.idToken, accessToken: tokens.accessToken)
+            )
+        )
+        guard (200..<300).contains(http.statusCode) else {
+            let body = try? JSONDecoder().decode(ErrorBody.self, from: data)
+            throw AuthError.failed(body?.message ?? body?.error ?? "Googleログインに失敗しました")
+        }
+        await refresh()
+        if user == nil {
+            throw AuthError.failed("ログインに失敗しました（セッションを取得できません）")
+        }
+    }
+
     func signOut() async {
         _ = try? await APIClient.shared.request("/api/auth/sign-out", method: "POST")
         user = nil

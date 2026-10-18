@@ -64,6 +64,22 @@ struct LoginView: View {
                     .disabled(isBusy || email.isEmpty || password.isEmpty)
                     .opacity(email.isEmpty || password.isEmpty ? 0.5 : 1)
 
+                    if GoogleSignInManager.isConfigured {
+                        Button(action: submitGoogle) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "globe")
+                                Text("Googleでログイン")
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                        }
+                        .background(DopaColor.card, in: Capsule())
+                        .overlay(Capsule().stroke(DopaColor.border))
+                        .foregroundStyle(.primary)
+                        .disabled(isBusy)
+                    }
+
                     Link(destination: APIClient.baseURL.appendingPathComponent("register")) {
                         Text("アカウントがない場合は Web で新規登録 →")
                             .font(.footnote)
@@ -85,6 +101,20 @@ struct LoginView: View {
         Task {
             do {
                 try await auth.signIn(email: emailValue, password: password)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isBusy = false
+        }
+    }
+
+    private func submitGoogle() {
+        guard !isBusy else { return }
+        isBusy = true
+        errorMessage = nil
+        Task {
+            do {
+                try await auth.signInWithGoogle()
             } catch {
                 errorMessage = error.localizedDescription
             }

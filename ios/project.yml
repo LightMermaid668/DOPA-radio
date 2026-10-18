@@ -8,6 +8,10 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "10.0.0"
 targets:
   DopaRadio:
     type: application
@@ -16,6 +20,9 @@ targets:
       - path: DopaRadio
         excludes:
           - "Info.plist"
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
     info:
       path: DopaRadio/Info.plist
       properties:
@@ -28,6 +35,12 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
+        GIDServerClientID: $(GOOGLE_WEB_CLIENT_ID)
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - $(GOOGLE_IOS_REVERSED_CLIENT_ID)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: si.f5.sosukeiwasaki.doparadio
@@ -35,3 +48,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 3Q5V7R32G2
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Googleログイン設定（Google Cloud ConsoleのiOS OAuthクライアントIDを設定する）
+        GOOGLE_IOS_CLIENT_ID: ""
+        GOOGLE_IOS_REVERSED_CLIENT_ID: ""
+        GOOGLE_WEB_CLIENT_ID: ""

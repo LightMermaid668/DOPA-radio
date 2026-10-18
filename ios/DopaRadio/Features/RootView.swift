@@ -1,3 +1,4 @@
+import GoogleSignIn
 import SwiftUI
 
 struct RootView: View {
@@ -20,6 +21,10 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onOpenURL { url in
+            // Googleログインの戻り（OAuthコールバック）
+            GIDSignIn.sharedInstance.handle(url)
+        }
     }
 
     private var mainTabs: some View {
