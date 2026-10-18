@@ -27,6 +27,9 @@ export async function GET(request: Request) {
       status: tracks.status,
       visibility: tracks.visibility,
       playCount: tracks.playCount,
+      pinnedAt: tracks.pinnedAt,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
       createdAt: tracks.createdAt,
     })
     .from(tracks)

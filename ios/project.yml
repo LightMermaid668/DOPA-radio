@@ -1,0 +1,36 @@
+name: DopaRadio
+options:
+  bundleIdPrefix: si.f5.sosukeiwasaki
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+targets:
+  DopaRadio:
+    type: application
+    platform: iOS
+    sources:
+      - path: DopaRadio
+        excludes:
+          - "Info.plist"
+    info:
+      path: DopaRadio/Info.plist
+      properties:
+        CFBundleDisplayName: DOPA-radio
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIBackgroundModes:
+          - audio
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: si.f5.sosukeiwasaki.doparadio
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
