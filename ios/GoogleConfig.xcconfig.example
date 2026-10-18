@@ -1,0 +1,19 @@
+// ============================================================
+// Googleログイン設定（このファイルをコピーして GoogleConfig.xcconfig を作成）
+//   cp GoogleConfig.xcconfig.example GoogleConfig.xcconfig
+//
+// 取得手順:
+// 1. https://console.cloud.google.com/apis/credentials を開く
+//    （Web版のGoogleログインを作ったのと同じプロジェクト）
+// 2. 「+ 認証情報を作成」→「OAuth クライアント ID」
+// 3. アプリの種類: iOS ／ 名前: DOPA-radio iOS
+//    バンドルID: si.f5.sosukeiwasaki.doparadio
+// 4. 作成後に表示される「クライアントID」を下の GOOGLE_IOS_CLIENT_ID に貼る
+// 5. 同ページの一覧にある「ウェブ クライアント」のIDを GOOGLE_WEB_CLIENT_ID に貼る
+// 6. GOOGLE_IOS_REVERSED_CLIENT_ID は iOSクライアントIDの反転:
+//    「12345-abc.apps.googleusercontent.com」→「com.googleusercontent.apps.12345-abc」
+// ============================================================
+
+GOOGLE_IOS_CLIENT_ID =
+GOOGLE_IOS_REVERSED_CLIENT_ID =
+GOOGLE_WEB_CLIENT_ID =

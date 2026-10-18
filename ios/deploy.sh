@@ -24,6 +24,11 @@ fi
 echo "[deploy] device: $DEVICE_ID"
 
 if command -v xcodegen >/dev/null 2>&1; then
+  # Googleログイン設定（未作成なら空の設定で作る。値を埋めるとボタンが出る）
+  if [ ! -f GoogleConfig.xcconfig ]; then
+    cp GoogleConfig.xcconfig.example GoogleConfig.xcconfig
+    echo "[deploy] GoogleConfig.xcconfig を作成しました（Googleログインを使う場合は値を記入してください）"
+  fi
   xcodegen generate >/dev/null
 fi
 

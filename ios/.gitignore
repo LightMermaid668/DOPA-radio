@@ -2,4 +2,5 @@ DopaRadio.xcodeproj/
 xcuserdata/
 DerivedData/
 build/
+GoogleConfig.xcconfig
 .DS_Store
