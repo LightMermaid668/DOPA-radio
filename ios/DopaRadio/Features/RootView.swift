@@ -28,26 +28,42 @@ struct RootView: View {
     }
 
     private var mainTabs: some View {
-        TabView(selection: $selectedTab) {
-            playerTab { HomeView() }
-                .tabItem { Label("ホーム", systemImage: "house.fill") }
-                .tag(0)
+        Group {
+            if #available(iOS 26.0, *) {
+                // iOS 26+: システムのタブバーアクセサリとしてミニプレイヤーを表示。
+                // リストの下部インセットが自動調整される（Apple Music風・タブバーに吸い込まれる）
+                TabView(selection: $selectedTab) {
+                    tabItems
+                }
+                .tabViewBottomAccessory {
+                    if player.currentTrack != nil {
+                        MiniPlayerBar(showNowPlaying: $showNowPlaying, embedded: true)
+                    }
+                }
+                .tabBarMinimizeBehavior(.onScrollDown)
+            } else {
+                TabView(selection: $selectedTab) {
+                    playerTab { HomeView() }
+                        .tabItem { Label("ホーム", systemImage: "house.fill") }
+                        .tag(0)
 
-            playerTab { DiscoverView() }
-                .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
-                .tag(1)
+                    playerTab { DiscoverView() }
+                        .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
+                        .tag(1)
 
-            playerTab { LibraryView() }
-                .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
-                .tag(2)
+                    playerTab { LibraryView() }
+                        .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
+                        .tag(2)
 
-            playerTab { PlaylistsView() }
-                .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
-                .tag(3)
+                    playerTab { PlaylistsView() }
+                        .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
+                        .tag(3)
 
-            playerTab { SearchView() }
-                .tabItem { Label("検索", systemImage: "magnifyingglass") }
-                .tag(4)
+                    playerTab { SearchView() }
+                        .tabItem { Label("検索", systemImage: "magnifyingglass") }
+                        .tag(4)
+                }
+            }
         }
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
@@ -58,6 +74,29 @@ struct RootView: View {
                 .presentationBackground(DopaColor.background)
         }
         .tint(DopaColor.accent)
+    }
+
+    @ViewBuilder
+    private var tabItems: some View {
+        HomeView()
+            .tabItem { Label("ホーム", systemImage: "house.fill") }
+            .tag(0)
+
+        DiscoverView()
+            .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
+            .tag(1)
+
+        LibraryView()
+            .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
+            .tag(2)
+
+        PlaylistsView()
+            .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
+            .tag(3)
+
+        SearchView()
+            .tabItem { Label("検索", systemImage: "magnifyingglass") }
+            .tag(4)
     }
 
     /// タブ内容の下端（タブバーの上）にミニプレイヤーを重ねる。

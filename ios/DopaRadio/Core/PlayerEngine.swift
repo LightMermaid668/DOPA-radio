@@ -3,6 +3,13 @@ import Combine
 import MediaPlayer
 import UIKit
 
+/// リピートモード
+enum RepeatMode: Int {
+    case off = 0
+    case all = 1
+    case one = 2
+}
+
 /// AVPlayer 2台（A/B）を使ったネイティブプレイヤー。
 ///
 /// 設計（Web版の知見をネイティブに移植）:
@@ -37,6 +44,28 @@ final class PlayerEngine: ObservableObject {
 
     @Published var dopaMode: Bool {
         didSet { UserDefaults.standard.set(dopaMode, forKey: "dopa.dopa") }
+    }
+
+    @Published var repeatMode: RepeatMode = .off {
+        didSet { UserDefaults.standard.set(repeatMode.rawValue, forKey: "dopa.repeat") }
+    }
+
+    @Published var shuffleEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(shuffleEnabled, forKey: "dopa.shuffle")
+            applyShuffleChange()
+        }
+    }
+
+    /// リピート/ドパモードを考慮して先へ進めるか
+    var canAdvance: Bool { index + 1 < queue.count || (repeatMode == .all && !queue.isEmpty) }
+
+    func cycleRepeatMode() {
+        switch repeatMode {
+        case .off: repeatMode = .all
+        case .all: repeatMode = .one
+        case .one: repeatMode = .off
+        }
     }
 
     var crossfadeSeconds: Double = 3.0
@@ -104,6 +133,8 @@ final class PlayerEngine: ObservableObject {
             (UserDefaults.standard.object(forKey: "dopa.crossfade") as? Bool) ?? true
         chorusOnly = (UserDefaults.standard.object(forKey: "dopa.chorus") as? Bool) ?? false
         dopaMode = (UserDefaults.standard.object(forKey: "dopa.dopa") as? Bool) ?? false
+        repeatMode = RepeatMode(rawValue: UserDefaults.standard.integer(forKey: "dopa.repeat")) ?? .off
+        shuffleEnabled = (UserDefaults.standard.object(forKey: "dopa.shuffle") as? Bool) ?? false
         lastAppliedPitch = settings.pitchSemitones
 
         for player in [playerA, playerB] {
@@ -135,6 +166,12 @@ final class PlayerEngine: ObservableObject {
         guard !playable.isEmpty else { return }
         queue = playable
         index = min(max(startIndex, 0), playable.count - 1)
+        if shuffleEnabled {
+            unshuffledQueue = queue
+            reshuffleUpcoming()
+        } else {
+            unshuffledQueue = nil
+        }
         startCurrent(from: 0)
     }
 
@@ -145,6 +182,7 @@ final class PlayerEngine: ObservableObject {
             main.pause()
             isPlaying = false
         } else {
+            try? AVAudioSession.sharedInstance().setActive(true)
             main.play()
             isPlaying = true
         }
@@ -155,8 +193,24 @@ final class PlayerEngine: ObservableObject {
         guard !queue.isEmpty else { return }
         if userInitiated { Haptics.tap() }
         cancelCrossfade()
+
+        // リピート1曲: 自動送りのときだけ同じ曲を先頭から再生し直す
+        if !userInitiated, repeatMode == .one {
+            main.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+            progress = 0
+            main.play()
+            isPlaying = true
+            updateNowPlaying(force: true)
+            return
+        }
+
         if index + 1 < queue.count {
             index += 1
+            startCurrent(from: 0)
+            return
+        }
+        if repeatMode == .all {
+            index = 0
             startCurrent(from: 0)
             return
         }
@@ -179,7 +233,11 @@ final class PlayerEngine: ObservableObject {
             progress = 0
             return
         }
-        index = max(0, index - 1)
+        if index > 0 {
+            index -= 1
+        } else if repeatMode == .all {
+            index = queue.count - 1
+        }
         startCurrent(from: 0)
     }
 
@@ -213,6 +271,43 @@ final class PlayerEngine: ObservableObject {
         main.pause()
         isPlaying = false
         updateNowPlaying(force: true)
+    }
+
+    // MARK: - シャッフル
+
+    private var unshuffledQueue: [PlayerTrack]?
+
+    private func applyShuffleChange() {
+        if shuffleEnabled {
+            guard unshuffledQueue == nil else { return }
+            unshuffledQueue = queue
+            reshuffleUpcoming()
+        } else {
+            restoreOriginalOrder()
+        }
+    }
+
+    /// 現在の曲より後ろだけをシャッフルする
+    private func reshuffleUpcoming() {
+        guard let currentId = currentTrack?.id,
+            let currentPos = queue.firstIndex(where: { $0.id == currentId })
+        else { return }
+        var rest = Array(queue.dropFirst(currentPos + 1))
+        rest.shuffle()
+        queue = Array(queue.prefix(currentPos + 1)) + rest
+    }
+
+    /// シャッフル解除時に元の並びへ戻す（曲の増減がある場合は現状維持）
+    private func restoreOriginalOrder() {
+        guard let original = unshuffledQueue else { return }
+        unshuffledQueue = nil
+        guard let currentId = currentTrack?.id,
+            original.count == queue.count,
+            Set(original.map(\.id)) == Set(queue.map(\.id)),
+            let originalPos = original.firstIndex(where: { $0.id == currentId })
+        else { return }
+        queue = original
+        index = originalPos
     }
 
     func seek(to seconds: Double) {
@@ -359,8 +454,13 @@ final class PlayerEngine: ObservableObject {
     }
 
     private func beginCrossfade() {
-        guard pendingNextIndex == nil else { return }
-        let nextIndex = index + 1
+        guard pendingNextIndex == nil, !queue.isEmpty else { return }
+        // リピート1曲のときはクロスフェードしない（同じ曲を頭から再生）
+        guard repeatMode != .one else { return }
+        let wrapped = index + 1 >= queue.count
+        // リピート全曲なら先頭へ戻ってクロスフェード
+        guard !wrapped || repeatMode == .all else { return }
+        let nextIndex = wrapped ? 0 : index + 1
         guard queue.indices.contains(nextIndex), let url = queue[nextIndex].streamURL else { return }
 
         pendingNextIndex = nextIndex
@@ -496,7 +596,7 @@ final class PlayerEngine: ObservableObject {
         // アイテム失敗（無音のまま進まない事故を防ぐ）
         if item.status == .failed {
             playbackError = item.error?.localizedDescription ?? "再生に失敗しました"
-            if hasNext {
+            if canAdvance {
                 next(userInitiated: false)
             } else {
                 main.pause()
@@ -561,9 +661,10 @@ final class PlayerEngine: ObservableObject {
 
         // クロスフェード開始判定（終端 = サビ終わりの場合はそこを基準にする）
         if isPlaying, crossfadeEnabled, pendingNextIndex == nil,
+            repeatMode != .one,
             endTime > crossfadeSeconds + 1,
             endTime - progress <= crossfadeSeconds,
-            hasNext
+            canAdvance
         {
             beginCrossfade()
         }
@@ -580,7 +681,7 @@ final class PlayerEngine: ObservableObject {
         // ドパモードの先読み
         maybePrefetchRadio()
 
-        if Date().timeIntervalSince(lastNowPlayingUpdate) >= 1 {
+        if isPlaying, Date().timeIntervalSince(lastNowPlayingUpdate) >= 1 {
             updateNowPlaying()
         }
     }
@@ -778,15 +879,20 @@ final class PlayerEngine: ObservableObject {
                 else { return }
                 switch type {
                 case .began:
+                    // Apple Music等にセッションを取られたら、UI状態とクロスフェードを整理する
                     self.isPlaying = false
+                    self.cancelCrossfade()
+                    self.updateNowPlaying(force: true)
                 case .ended:
                     let optionsRaw = notification.userInfo?[
                         AVAudioSessionInterruptionOptionKey
                     ] as? UInt ?? 0
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsRaw)
-                    if options.contains(.shouldResume) {
+                    if options.contains(.shouldResume), self.currentTrack != nil {
+                        try? AVAudioSession.sharedInstance().setActive(true)
                         self.main.play()
                         self.isPlaying = true
+                        self.updateNowPlaying(force: true)
                     }
                 @unknown default:
                     break

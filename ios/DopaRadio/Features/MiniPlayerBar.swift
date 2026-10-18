@@ -3,6 +3,8 @@ import SwiftUI
 struct MiniPlayerBar: View {
     @EnvironmentObject private var player: PlayerEngine
     @Binding var showNowPlaying: Bool
+    /// タブバーアクセサリ内では背景をシステムに任せる
+    var embedded = false
 
     var body: some View {
         if let track = player.currentTrack {
@@ -51,11 +53,13 @@ struct MiniPlayerBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
-            .background(.ultraThinMaterial)
+            .background(embedded ? AnyShapeStyle(.clear) : AnyShapeStyle(.ultraThinMaterial))
             .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(DopaColor.border)
-                    .frame(height: 0.5)
+                if !embedded {
+                    Rectangle()
+                        .fill(DopaColor.border)
+                        .frame(height: 0.5)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture { showNowPlaying = true }
