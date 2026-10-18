@@ -2,10 +2,13 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerEngine
+    @ObservedObject private var settings = AudioSettingsStore.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var isSeeking = false
     @State private var seekValue: Double = 0
+    @State private var showStudio = false
+    @State private var showSpeedPitch = false
 
     var body: some View {
         ZStack {
@@ -41,6 +44,16 @@ struct NowPlayingView: View {
                             Label("次の曲にミックス中…", systemImage: "arrow.triangle.merge")
                                 .font(.caption2)
                                 .foregroundStyle(DopaColor.accent)
+                                .padding(.top, 2)
+                        } else if let notice = player.notice {
+                            Text(notice)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 2)
+                        } else if let error = player.playbackError {
+                            Text(error)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
                                 .padding(.top, 2)
                         }
                     }
@@ -91,6 +104,12 @@ struct NowPlayingView: View {
             } else {
                 ContentUnavailableView("再生中の曲はありません", systemImage: "music.note")
             }
+        }
+        .sheet(isPresented: $showStudio) {
+            StudioSheet()
+        }
+        .sheet(isPresented: $showSpeedPitch) {
+            SpeedPitchSheet()
         }
     }
 
@@ -146,28 +165,46 @@ struct NowPlayingView: View {
 
     private var bottomBar: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 ModeChip(
                     label: "クロスフェード", systemImage: "arrow.triangle.merge",
                     isOn: $player.crossfadeEnabled
                 )
                 ModeChip(label: "サビだけ", systemImage: "scissors", isOn: $player.chorusOnly)
                 ModeChip(label: "ドパ", systemImage: "radio", isOn: $player.dopaMode)
+                ModeChip(label: "DJ", systemImage: "waveform.path", isOn: $settings.djMix)
             }
 
-            Button {
-                dismiss()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.down")
-                    Text("閉じる")
+            HStack(spacing: 8) {
+                smallButton("スタジオ", systemImage: "slider.horizontal.3") {
+                    showStudio = true
                 }
-                .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(DopaColor.card, in: Capsule())
+                smallButton("速度・ピッチ", systemImage: "gauge.with.dots.needle.33percent") {
+                    showSpeedPitch = true
+                }
+                smallButton("閉じる", systemImage: "chevron.down") {
+                    dismiss()
+                }
             }
-            .accessibilityLabel("閉じる")
         }
+    }
+
+    private func smallButton(
+        _ label: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage).font(.system(size: 12))
+                Text(label).font(.caption2.weight(.semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(DopaColor.card, in: Capsule())
+            .overlay(Capsule().stroke(DopaColor.border))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }

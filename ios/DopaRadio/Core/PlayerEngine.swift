@@ -4,10 +4,17 @@ import MediaPlayer
 import UIKit
 
 /// AVPlayer 2台（A/B）を使ったネイティブプレイヤー。
-/// クロスフェードは「終端の数秒前に次曲をBで先読み再生し、音量をランプして昇格」する方式
-/// （Web版と同じ設計。ネイティブは音量が自由なので焼き込み不要）。
+///
+/// 設計（Web版の知見をネイティブに移植）:
+/// - クロスフェード: 終端の数秒前に次曲をBで先読み再生し、音量をイコールパワーでランプして昇格
+/// - 進行は「タイマー + 両プレイヤーのperiodicTimeObserver + didPlayToEndTime通知」の多重駆動
+/// - 'ended' を取りこぼしても必ず進む（ウォッチドッグ的チェック）
+/// - 昇格時は先読みが失敗していないか検証し、ダメなら通常開始にフォールバック
+/// - サビだけ / ドパモード / 速度 / ピッチ（サーバー生成）/ スタジオDSP（Tap）/ DJミックス
 @MainActor
 final class PlayerEngine: ObservableObject {
+    // MARK: - 公開状態
+
     @Published private(set) var queue: [PlayerTrack] = []
     @Published private(set) var index = 0
     @Published private(set) var isPlaying = false
@@ -15,6 +22,7 @@ final class PlayerEngine: ObservableObject {
     @Published private(set) var duration: Double = 0
     @Published private(set) var isCrossfading = false
     @Published var playbackError: String?
+    @Published private(set) var notice: String?
 
     @Published var crossfadeEnabled: Bool {
         didSet {
@@ -23,17 +31,17 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    /// サビだけモード（サビ範囲が設定された曲はサビ部分だけ再生）
     @Published var chorusOnly: Bool {
         didSet { UserDefaults.standard.set(chorusOnly, forKey: "dopa.chorus") }
     }
 
-    /// ドパモード（キューが終わると似てる曲を自動追加）
     @Published var dopaMode: Bool {
         didSet { UserDefaults.standard.set(dopaMode, forKey: "dopa.dopa") }
     }
 
     var crossfadeSeconds: Double = 3.0
+
+    let settings = AudioSettingsStore.shared
 
     var currentTrack: PlayerTrack? {
         queue.indices.contains(index) ? queue[index] : nil
@@ -51,32 +59,67 @@ final class PlayerEngine: ObservableObject {
     private var secondary: AVPlayer { mainIsA ? playerB : playerA }
 
     private var pendingNextIndex: Int?
-    private var crossfadeTask: Task<Void, Never>?
+    private var crossfadeStartedAt: Date?
+    private var crossfadeDuration: Double = 3.0
+    private var djSwapDone = false
+
     private var ticker: Timer?
+    private var timeObserverTokens: [Any] = []
     private var lastNowPlayingUpdate = Date.distantPast
     private var lastArtworkTrackId: String?
+    private var nowPlayingArtwork: MPMediaItemArtwork?
+    private var artworkTrackId: String?
 
-    // サビだけ / フェード / ドパモード用
+    // サビだけ / フェード
     private var effectiveEndSec: Double?
     private var chorusFadeArmed = false
     private var volumeFadeTask: Task<Void, Never>?
+
+    // ドパモード
     private var radioFetching = false
     private var radioCooldownUntil = Date.distantPast
+
+    // ピッチ（サーバー生成の音源）
+    private var pitchReadyKeys: Set<String> = []
+    private var startGeneration = 0
+    private var lastAppliedPitch = 0
+
+    // スタジオDSP
+    private var mainDSP: TapDSP?
+    private var secondaryDSP: TapDSP?
+
+    // 誤連続送りガード
+    private var lastAdvanceAt = Date.distantPast
+
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         crossfadeEnabled =
             (UserDefaults.standard.object(forKey: "dopa.crossfade") as? Bool) ?? true
         chorusOnly = (UserDefaults.standard.object(forKey: "dopa.chorus") as? Bool) ?? false
         dopaMode = (UserDefaults.standard.object(forKey: "dopa.dopa") as? Bool) ?? false
+        lastAppliedPitch = settings.pitchSemitones
 
         for player in [playerA, playerB] {
             player.actionAtItemEnd = .pause
             player.volume = 1
+            player.defaultRate = Float(clampedRate(settings.userRate))
         }
 
         setupRemoteCommands()
         observeNotifications()
         startTicker()
+        startTimeObservers()
+
+        // 設定変更を反映（objectWillChangeは変更前に発火するため次のrunloopで読む）
+        settings.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.settingsDidChange()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - 再生API
@@ -91,6 +134,7 @@ final class PlayerEngine: ObservableObject {
 
     func togglePlay() {
         guard currentTrack != nil else { return }
+        Haptics.tap()
         if isPlaying {
             main.pause()
             isPlaying = false
@@ -103,6 +147,7 @@ final class PlayerEngine: ObservableObject {
 
     func next(userInitiated: Bool = true) {
         guard !queue.isEmpty else { return }
+        if userInitiated { Haptics.tap() }
         cancelCrossfade()
         if index + 1 < queue.count {
             index += 1
@@ -110,7 +155,6 @@ final class PlayerEngine: ObservableObject {
             return
         }
         if dopaMode {
-            // 似てる曲を取ってきて続ける
             Task { await extendWithRadio() }
             return
         }
@@ -122,6 +166,7 @@ final class PlayerEngine: ObservableObject {
 
     func previous() {
         guard !queue.isEmpty else { return }
+        Haptics.tap()
         cancelCrossfade()
         if progress > 3 {
             main.seek(to: .zero)
@@ -161,24 +206,63 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    // MARK: - 内部処理
+    // MARK: - 開始処理
 
     private func startCurrent(from position: Double) {
-        guard let track = currentTrack, let url = track.streamURL else { return }
+        guard let track = currentTrack else { return }
+        startGeneration += 1
+        let generation = startGeneration
+
+        // ピッチ変更時はサーバー生成の音源を使う（生成完了まで待つ）
+        if settings.pitchSemitones != 0, track.directURL == nil {
+            let semitones = settings.pitchSemitones
+            notice = "ピッチ音源を準備しています…（初回のみ・数秒）"
+            Task { [weak self] in
+                guard let self else { return }
+                let ready = await self.ensurePitchVariant(trackId: track.id, semitones: semitones)
+                guard generation == self.startGeneration else { return }
+                guard self.currentTrack?.id == track.id else { return }
+                self.notice = nil
+                let variantURL = ready ? self.pitchVariantURL(trackId: track.id, semitones: semitones) : nil
+                if !ready {
+                    self.notice = "ピッチ音源を用意できませんでした（通常音源で再生）"
+                }
+                self.actuallyStart(track: track, url: variantURL ?? track.streamURL, from: position)
+            }
+            return
+        }
+
+        notice = nil
+        actuallyStart(track: track, url: track.streamURL, from: position)
+    }
+
+    private func actuallyStart(track: PlayerTrack, url: URL?, from position: Double) {
+        guard let url else { return }
         cancelCrossfade()
         let item = AVPlayerItem(url: url)
+        item.audioTimePitchAlgorithm = settings.preservesPitch ? .spectral : .varispeed
+        let rate = Float(clampedRate(settings.userRate))
+        main.defaultRate = rate
         main.replaceCurrentItem(with: item)
         main.volume = 1
+
+        // スタジオ（Tap）を接続
+        if settings.studioActive {
+            let dsp = TapDSP()
+            applySettings(to: dsp)
+            mainDSP = dsp
+            StudioTap.attach(to: item, dsp: dsp)
+        }
+
         effectiveEndSec = nil
         chorusFadeArmed = false
 
-        // サビだけモード: 終端をサビ終わりにして、開始はサビ頭から
+        // サビだけモード: 終端はサビ終わり、開始はサビ頭から
         var seekTarget = position
         if chorusOnly, let start = track.chorusStartSec, let end = track.chorusEndSec,
             end - start >= 5
         {
             effectiveEndSec = Double(end)
-            item.forwardPlaybackEndTime = CMTime(seconds: Double(end), preferredTimescale: 600)
             if start > 1, position <= 3 {
                 seekTarget = Double(start)
             }
@@ -188,26 +272,42 @@ final class PlayerEngine: ObservableObject {
             main.seek(to: CMTime(seconds: seekTarget, preferredTimescale: 600))
         }
         main.play()
+        if rate != 1 {
+            main.rate = rate
+        }
         isPlaying = true
         playbackError = nil
 
-        // サビ頭・頭出し時はフェードイン（ネイティブは音量が使える）
         if chorusOnly, seekTarget > 1, position <= 3 {
             main.volume = 0
             rampVolume(to: 1, duration: 0.8)
         }
         updateNowPlaying(force: true)
+
+        // 次曲のピッチ音源を先読み
+        if settings.pitchSemitones != 0, queue.indices.contains(index + 1) {
+            let nextTrack = queue[index + 1]
+            if nextTrack.directURL == nil {
+                Task { [weak self] in
+                    _ = await self?.ensurePitchVariant(
+                        trackId: nextTrack.id, semitones: self?.settings.pitchSemitones ?? 0
+                    )
+                }
+            }
+        }
     }
 
     private func cancelCrossfade() {
-        crossfadeTask?.cancel()
-        crossfadeTask = nil
+        crossfadeStartedAt = nil
         pendingNextIndex = nil
         isCrossfading = false
+        djSwapDone = false
         secondary.pause()
         secondary.replaceCurrentItem(with: nil)
         secondary.volume = 1
         main.volume = 1
+        mainDSP?.highpassOn = false
+        secondaryDSP = nil
     }
 
     private func beginCrossfade() {
@@ -217,33 +317,62 @@ final class PlayerEngine: ObservableObject {
 
         pendingNextIndex = nextIndex
         isCrossfading = true
+        djSwapDone = false
+        crossfadeStartedAt = Date()
+        crossfadeDuration = crossfadeSeconds
 
         let next = secondary
-        next.replaceCurrentItem(with: AVPlayerItem(url: url))
+        let item = AVPlayerItem(url: url)
+        item.audioTimePitchAlgorithm = settings.preservesPitch ? .spectral : .varispeed
+        next.defaultRate = Float(clampedRate(settings.userRate))
+        next.replaceCurrentItem(with: item)
         next.volume = 0
         next.play()
+        if settings.userRate != 1 {
+            next.rate = Float(clampedRate(settings.userRate))
+        }
 
-        let steps = 30
-        let stepNanos = UInt64((crossfadeSeconds / Double(steps)) * 1_000_000_000)
-        crossfadeTask = Task { [weak self] in
-            guard let self else { return }
-            for step in 1...steps {
-                try? await Task.sleep(nanoseconds: stepNanos)
-                if Task.isCancelled { return }
-                let ratio = Float(step) / Float(steps)
-                self.secondary.volume = ratio
-                self.main.volume = 1 - ratio
-            }
-            if Task.isCancelled { return }
-            self.completeCrossfade()
+        // 入ってくる側のスタジオ（DJミックス時は最初ベースを抜く）
+        if settings.studioActive {
+            let dsp = TapDSP()
+            applySettings(to: dsp)
+            if settings.djMix { dsp.highpassOn = true }
+            secondaryDSP = dsp
+            StudioTap.attach(to: item, dsp: dsp)
+        } else {
+            secondaryDSP = nil
         }
     }
 
     private func completeCrossfade() {
         guard let nextIndex = pendingNextIndex else { return }
         pendingNextIndex = nil
-        crossfadeTask = nil
+        crossfadeStartedAt = nil
         isCrossfading = false
+
+        let incoming = secondary
+        let incomingReady: Bool = {
+            guard let item = incoming.currentItem else { return false }
+            return item.status == .readyToPlay && incoming.error == nil
+        }()
+
+        if !incomingReady {
+            // 先読みが失敗していたら通常開始に任せる（無音昇格を防ぐ）
+            incoming.pause()
+            incoming.replaceCurrentItem(with: nil)
+            secondaryDSP = nil
+            djSwapDone = false
+            mainDSP?.highpassOn = false
+            index = nextIndex
+            progress = 0
+            isPlaying = true
+            startCurrent(from: 0)
+            return
+        }
+
+        if incoming.rate == 0 {
+            incoming.play()
+        }
 
         let oldMain = main
         oldMain.pause()
@@ -252,13 +381,17 @@ final class PlayerEngine: ObservableObject {
 
         mainIsA.toggle()
         main.volume = 1
+        mainDSP = secondaryDSP
+        secondaryDSP = nil
+        mainDSP?.highpassOn = false
+        djSwapDone = false
         index = nextIndex
         progress = 0
         isPlaying = true
         updateNowPlaying(force: true)
     }
 
-    // MARK: - 進行監視（クロスフェード開始・復旧・進捗）
+    // MARK: - 進行監視（多重駆動）
 
     private func startTicker() {
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -270,11 +403,37 @@ final class PlayerEngine: ObservableObject {
         ticker = timer
     }
 
+    /// AVPlayerのperiodicTimeObserverでも進める（バックグラウンドやタイマー揺れ対策）
+    private func startTimeObservers() {
+        for player in [playerA, playerB] {
+            let token = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.tick()
+                }
+            }
+            timeObserverTokens.append(token)
+        }
+    }
+
     private func tick() {
         guard let item = main.currentItem else {
             if !queue.isEmpty && isPlaying && main.rate == 0 {
-                // 何らかの理由でアイテムが外れていたら復帰させる
                 startCurrent(from: progress)
+            }
+            return
+        }
+
+        // アイテム失敗（無音のまま進まない事故を防ぐ）
+        if item.status == .failed {
+            playbackError = item.error?.localizedDescription ?? "再生に失敗しました"
+            if hasNext {
+                next(userInitiated: false)
+            } else {
+                main.pause()
+                isPlaying = false
             }
             return
         }
@@ -288,20 +447,36 @@ final class PlayerEngine: ObservableObject {
             duration = itemDuration
         }
 
-        // サビだけモードではサビ終わりが実質の終端
-        let endTime: Double
-        if let effectiveEndSec {
-            endTime = effectiveEndSec
-        } else if itemDuration.isFinite {
-            endTime = itemDuration
-        } else {
-            endTime = 0
+        // 終端（サビだけ時はサビ終わり）
+        let endTime = effectiveEndSec ?? (itemDuration.isFinite ? itemDuration : 0)
+
+        // クロスフェードのランプ進行（タイマー駆動なのでバックグラウンドのタスク停止に強い）
+        if let startedAt = crossfadeStartedAt, pendingNextIndex != nil {
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let ratio = min(1, max(0, elapsed / crossfadeDuration))
+            secondary.volume = Float(sin(ratio * Double.pi / 2))
+            main.volume = Float(cos(ratio * Double.pi / 2))
+
+            // DJミックス: 中間でベーススワップ
+            if settings.djMix, !djSwapDone, ratio >= 0.5 {
+                djSwapDone = true
+                mainDSP?.highpassOn = true
+                secondaryDSP?.highpassOn = false
+            }
+
+            if ratio >= 1 {
+                completeCrossfade()
+                return
+            }
         }
 
         // 終端に達したら次へ進む（'ended'が来なくても必ず進む）
         if isPlaying, endTime > 0, progress >= endTime - 0.12, !isCrossfading {
+            if Date().timeIntervalSince(lastAdvanceAt) < 0.6 {
+                return
+            }
+            lastAdvanceAt = Date()
             if pendingNextIndex != nil {
-                secondary.volume = 1
                 completeCrossfade()
             } else {
                 next(userInitiated: false)
@@ -309,7 +484,7 @@ final class PlayerEngine: ObservableObject {
             return
         }
 
-        // 予期せぬ停止からの復帰（割り込み等）
+        // 予期せぬ停止からの復帰
         if isPlaying && main.rate == 0 && item.status == .readyToPlay
             && !isCrossfading
             && (endTime == 0 || progress < endTime - 1)
@@ -338,13 +513,12 @@ final class PlayerEngine: ObservableObject {
         // ドパモードの先読み
         maybePrefetchRadio()
 
-        // Now Playing は1秒に1回程度更新
         if Date().timeIntervalSince(lastNowPlayingUpdate) >= 1 {
             updateNowPlaying()
         }
     }
 
-    // MARK: - 音量フェード（サビメドレー用 / ネイティブ音量）
+    // MARK: - 音量フェード（サビメドレー用）
 
     private func rampVolume(to target: Float, duration: Double) {
         volumeFadeTask?.cancel()
@@ -360,6 +534,89 @@ final class PlayerEngine: ObservableObject {
                 self.main.volume = start + (target - start) * ratio
             }
         }
+    }
+
+    // MARK: - 速度・ピッチ
+
+    private func clampedRate(_ rate: Double) -> Double {
+        min(2.0, max(0.5, rate))
+    }
+
+    private func settingsDidChange() {
+        let rate = Float(clampedRate(settings.userRate))
+        for player in [playerA, playerB] {
+            player.defaultRate = rate
+            if let item = player.currentItem {
+                item.audioTimePitchAlgorithm = settings.preservesPitch ? .spectral : .varispeed
+            }
+        }
+        if isPlaying, !isCrossfading {
+            main.rate = rate
+        }
+
+        applySettings(to: mainDSP)
+        applySettings(to: secondaryDSP)
+
+        // スタジオを後からONにしたら現在のアイテムへ接続
+        if settings.studioActive, mainDSP == nil, let item = main.currentItem {
+            let dsp = TapDSP()
+            applySettings(to: dsp)
+            mainDSP = dsp
+            StudioTap.attach(to: item, dsp: dsp)
+        }
+
+        // ピッチ変更 → 現在の曲を再スタート（同じ位置から）
+        if settings.pitchSemitones != lastAppliedPitch {
+            lastAppliedPitch = settings.pitchSemitones
+            if currentTrack?.directURL == nil, currentTrack != nil {
+                startCurrent(from: progress)
+            }
+        }
+    }
+
+    private func applySettings(to dsp: TapDSP?) {
+        guard let dsp else { return }
+        dsp.eqEnabled = settings.eqEnabled
+        dsp.bassDB = Float(settings.eqBass)
+        dsp.midDB = Float(settings.eqMid)
+        dsp.trebleDB = Float(settings.eqTreble)
+        dsp.bassBoostDB = Float(settings.bassBoost)
+        dsp.vocalAmount = Float(settings.vocalRemoval / 100)
+        dsp.eightD = settings.eightD
+    }
+
+    // MARK: - ピッチ音源（サーバー生成）
+
+    private func pitchVariantURL(trackId: String, semitones: Int) -> URL? {
+        URL(string: "\(APIClient.baseURL.absoluteString)/api/tracks/\(trackId)/pitch/\(semitones)")
+    }
+
+    private func ensurePitchVariant(trackId: String, semitones: Int) async -> Bool {
+        let key = "\(trackId):\(semitones)"
+        if pitchReadyKeys.contains(key) { return true }
+
+        struct StatusResponse: Decodable {
+            let status: String?
+        }
+        for _ in 0..<40 {
+            do {
+                let response = try await APIClient.shared.get(
+                    "/api/tracks/\(trackId)/pitch/\(semitones)?check=1",
+                    as: StatusResponse.self
+                )
+                if response.status == "ready" {
+                    pitchReadyKeys.insert(key)
+                    return true
+                }
+                if response.status != "processing" {
+                    return false
+                }
+            } catch {
+                return false
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        return false
     }
 
     // MARK: - ドパモード（似てる曲の自動追加）
@@ -419,7 +676,7 @@ final class PlayerEngine: ObservableObject {
         startCurrent(from: 0)
     }
 
-    // MARK: - 通知（曲の終端・割り込み・ルート変更）
+    // MARK: - 通知（曲の終端・割り込み）
 
     private func observeNotifications() {
         NotificationCenter.default.addObserver(
@@ -432,12 +689,12 @@ final class PlayerEngine: ObservableObject {
                     let endedItem = notification.object as? AVPlayerItem,
                     endedItem === self.main.currentItem
                 else { return }
+                if Date().timeIntervalSince(self.lastAdvanceAt) < 0.6 { return }
+                self.lastAdvanceAt = Date()
                 if self.pendingNextIndex != nil {
-                    self.secondary.volume = 1
-                    self.main.volume = 0
                     self.completeCrossfade()
                 } else {
-                    self.next()
+                    self.next(userInitiated: false)
                 }
             }
         }
@@ -530,7 +787,7 @@ final class PlayerEngine: ObservableObject {
             MPMediaItemPropertyArtist: track.artist ?? "DOPA-radio",
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: progress,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: (isPlaying ? 1.0 : 0.0) * settings.userRate,
         ]
 
         if let artwork = nowPlayingArtwork, artworkTrackId == track.id {
@@ -541,9 +798,6 @@ final class PlayerEngine: ObservableObject {
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
-
-    private var nowPlayingArtwork: MPMediaItemArtwork?
-    private var artworkTrackId: String?
 
     private func loadArtwork(for track: PlayerTrack) {
         lastArtworkTrackId = track.id
