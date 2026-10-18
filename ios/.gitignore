@@ -1,4 +1,5 @@
 DopaRadio.xcodeproj/
 xcuserdata/
 DerivedData/
+build/
 .DS_Store
