@@ -24,11 +24,11 @@ struct RootView: View {
 
     private var mainTabs: some View {
         TabView(selection: $selectedTab) {
-            PlaceholderView(title: "ホーム", message: "ピン留め・保存した曲・タブのハブ（Phase 2以降）", systemImage: "house.fill")
+            HomeView()
                 .tabItem { Label("ホーム", systemImage: "house.fill") }
                 .tag(0)
 
-            PlaceholderView(title: "ディスカバー", message: "みんなの公開曲とプレイリスト（Phase 2で実装）", systemImage: "safari.fill")
+            DiscoverView()
                 .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
                 .tag(1)
 
@@ -36,11 +36,11 @@ struct RootView: View {
                 .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
                 .tag(2)
 
-            PlaceholderView(title: "プレイリスト", message: "プレイリスト一覧と詳細（Phase 2で実装）", systemImage: "list.bullet.rectangle")
+            PlaylistsView()
                 .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
                 .tag(3)
 
-            PlaceholderView(title: "検索", message: "ライブラリ/ディスカバーの検索（Phase 2で実装）", systemImage: "magnifyingglass")
+            SearchView()
                 .tabItem { Label("検索", systemImage: "magnifyingglass") }
                 .tag(4)
         }

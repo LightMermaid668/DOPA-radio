@@ -33,4 +33,5 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: si.f5.sosukeiwasaki.doparadio
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3Q5V7R32G2
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

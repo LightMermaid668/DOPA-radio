@@ -1,11 +1,53 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/db";
+import { user as userTable } from "@/db/auth-schema";
 import { savedTracks, tracks } from "@/db/schema";
 import { getSession } from "@/lib/session";
 
 type SaveBody = { trackId?: string };
+
+export async function GET() {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
+  }
+
+  const rows = await db
+    .select({
+      trackId: savedTracks.trackId,
+      title: tracks.title,
+      artist: tracks.artist,
+      durationSec: tracks.durationSec,
+      artworkKey: tracks.artworkKey,
+      status: tracks.status,
+      ownerName: userTable.name,
+      chorusStartSec: tracks.chorusStartSec,
+      chorusEndSec: tracks.chorusEndSec,
+      pinnedAt: savedTracks.pinnedAt,
+    })
+    .from(savedTracks)
+    .innerJoin(tracks, eq(savedTracks.trackId, tracks.id))
+    .leftJoin(userTable, eq(tracks.ownerId, userTable.id))
+    .where(eq(savedTracks.userId, session.user.id))
+    .orderBy(desc(savedTracks.createdAt));
+
+  return NextResponse.json({
+    tracks: rows.map((row) => ({
+      trackId: row.trackId,
+      title: row.title,
+      artist: row.artist,
+      durationSec: row.durationSec,
+      hasArtwork: Boolean(row.artworkKey),
+      ready: row.status === "ready",
+      ownerName: row.ownerName ?? null,
+      chorusStartSec: row.chorusStartSec,
+      chorusEndSec: row.chorusEndSec,
+      pinned: Boolean(row.pinnedAt),
+    })),
+  });
+}
 
 export async function POST(request: Request) {
   const session = await getSession();

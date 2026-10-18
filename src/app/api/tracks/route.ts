@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       pinnedAt: tracks.pinnedAt,
       chorusStartSec: tracks.chorusStartSec,
       chorusEndSec: tracks.chorusEndSec,
+      artworkKey: tracks.artworkKey,
       createdAt: tracks.createdAt,
     })
     .from(tracks)
@@ -37,7 +38,14 @@ export async function GET(request: Request) {
     .orderBy(desc(tracks.createdAt));
 
   if (!includeSaved) {
-    return NextResponse.json({ tracks: rows.map((row) => ({ ...row, own: true, ownerName: null })) });
+    return NextResponse.json({
+      tracks: rows.map((row) => ({
+        ...row,
+        hasArtwork: Boolean(row.artworkKey),
+        own: true,
+        ownerName: null,
+      })),
+    });
   }
 
   const savedRows = await db
@@ -62,7 +70,12 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     tracks: [
-      ...rows.map((row) => ({ ...row, own: true, ownerName: null })),
+      ...rows.map((row) => ({
+        ...row,
+        hasArtwork: Boolean(row.artworkKey),
+        own: true,
+        ownerName: null,
+      })),
       ...savedRows.map((row) => ({ ...row, own: false, ownerName: row.ownerName ?? null })),
     ],
   });

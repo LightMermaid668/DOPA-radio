@@ -53,6 +53,14 @@ final class APIClient {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    /// レスポンス本文を使わない送信（PATCH / DELETE など）
+    @discardableResult
+    func send(_ path: String, method: String, body: Encodable? = nil) async throws -> HTTPURLResponse {
+        let (_, http) = try await request(path, method: method, body: body)
+        guard (200..<300).contains(http.statusCode) else { throw APIError.status(http.statusCode) }
+        return http
+    }
+
     /// 画像などのバイナリ取得
     nonisolated func fetchData(_ url: URL) async -> Data? {
         var request = URLRequest(url: url)
