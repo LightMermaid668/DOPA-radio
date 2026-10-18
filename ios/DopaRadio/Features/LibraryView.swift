@@ -37,26 +37,13 @@ struct LibraryView: View {
             .background(DopaColor.background)
             .navigationTitle("ライブラリ")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HStack(spacing: 0) {
-                        Button {
-                            player.crossfadeEnabled.toggle()
-                        } label: {
-                            Image(systemName: player.crossfadeEnabled
-                                ? "arrow.triangle.merge" : "arrow.triangle.branch")
-                        }
-                        .accessibilityLabel("クロスフェード")
-
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
                         Button {
                             showDownloads = true
                         } label: {
-                            Image(systemName: "arrow.down.circle")
+                            Label("ダウンロード済み", systemImage: "arrow.down.circle")
                         }
-                        .accessibilityLabel("ダウンロード済み")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
                         if let user = auth.user {
                             Section(user.email) {
                                 Button("ログアウト", role: .destructive) {
