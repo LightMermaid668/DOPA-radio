@@ -24,36 +24,42 @@ struct RootView: View {
 
     private var mainTabs: some View {
         TabView(selection: $selectedTab) {
-            HomeView()
+            playerTab { HomeView() }
                 .tabItem { Label("ホーム", systemImage: "house.fill") }
                 .tag(0)
 
-            DiscoverView()
+            playerTab { DiscoverView() }
                 .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
                 .tag(1)
 
-            LibraryView()
+            playerTab { LibraryView() }
                 .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
                 .tag(2)
 
-            PlaylistsView()
+            playerTab { PlaylistsView() }
                 .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
                 .tag(3)
 
-            SearchView()
+            playerTab { SearchView() }
                 .tabItem { Label("検索", systemImage: "magnifyingglass") }
                 .tag(4)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if player.currentTrack != nil {
-                MiniPlayerBar(showNowPlaying: $showNowPlaying)
-            }
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
             NowPlayingView()
                 .environmentObject(player)
         }
         .tint(DopaColor.accent)
+    }
+
+    /// タブ内容の下端（タブバーの上）にミニプレイヤーを重ねる。
+    /// TabView 全体に付けるとタブバーを覆ってしまうため、各タブ内容に付ける。
+    private func playerTab<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if player.currentTrack != nil {
+                    MiniPlayerBar(showNowPlaying: $showNowPlaying)
+                }
+            }
     }
 }
 
