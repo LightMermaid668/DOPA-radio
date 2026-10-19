@@ -394,75 +394,134 @@ final class StableAudioManager: ObservableObject {
 
     /// SA3は 44.1kHz/16bit PCM WAV のみ受け付けるため、指定秒数へ切り出して変換する
     private func prepareInitAudio(_ url: URL, seconds: Int) throws -> URL {
-        let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .audio).first else {
-            throw StableAudioError.setupFailed("原曲に音声が含まれていません")
+        let (left, right) = try decodeStereo44k(url, maxSeconds: seconds)
+        guard !left.isEmpty else {
+            throw StableAudioError.setupFailed("原曲の変換に失敗しました（音声が空です）")
         }
-        let reader = try AVAssetReader(asset: asset)
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsNonInterleaved: false,
-            AVNumberOfChannelsKey: 2,
-            AVSampleRateKey: 44_100,
-        ]
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
-        output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else {
-            throw StableAudioError.setupFailed("原曲を読み込めませんでした")
-        }
-        reader.add(output)
-        reader.timeRange = CMTimeRange(
-            start: .zero,
-            duration: CMTime(seconds: Double(seconds), preferredTimescale: 600)
-        )
-        guard reader.startReading() else {
-            throw StableAudioError.setupFailed("原曲の読み込みに失敗しました")
-        }
-
         let destination = Self.outputDirectory.appendingPathComponent(
             "init-\(UUID().uuidString).wav"
         )
-        let format = AVAudioFormat(
-            commonFormat: .pcmFormatInt16, sampleRate: 44_100, channels: 2, interleaved: true
-        )!
-        let file = try AVAudioFile(forWriting: destination, settings: format.settings)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_384)!
+        try writeWAV(left: left, right: right, to: destination)
+        return destination
+    }
 
-        while let sampleBuffer = output.copyNextSampleBuffer() {
-            defer { CMSampleBufferInvalidate(sampleBuffer) }
-            guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
-            let length = CMBlockBufferGetDataLength(block)
-            guard length > 0 else { continue }
-            var data = Data(count: length)
-            data.withUnsafeMutableBytes { raw in
-                guard let base = raw.baseAddress else { return }
-                _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: base)
-            }
-            let frameCount = length / 4
-            var offset = 0
-            while offset < frameCount {
-                let count = min(16_384, frameCount - offset)
-                buffer.frameLength = AVAudioFrameCount(count)
-                if let channels = buffer.int16ChannelData {
-                    data.withUnsafeBytes { raw in
-                        guard let base = raw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
-                        for index in 0..<count {
-                            channels[0][index] = base[(offset + index) * 2]
-                            channels[1][index] = base[(offset + index) * 2 + 1]
-                        }
-                    }
-                }
-                try file.write(from: buffer)
-                offset += count
-            }
+    /// 任意の音源を 44.1kHz / ステレオ / Float32 にデコードして返す
+    private func decodeStereo44k(_ url: URL, maxSeconds: Int) throws -> ([Float], [Float]) {
+        let file: AVAudioFile
+        do {
+            file = try AVAudioFile(forReading: url)
+        } catch {
+            throw StableAudioError.setupFailed("原曲を読み込めませんでした（対応していない形式です）")
         }
-        reader.cancelReading()
         guard file.length > 0 else {
+            throw StableAudioError.setupFailed("原曲が空です")
+        }
+        let sourceFormat = file.processingFormat
+        guard
+            let sourceBuffer = AVAudioPCMBuffer(
+                pcmFormat: sourceFormat,
+                frameCapacity: AVAudioFrameCount(file.length)
+            )
+        else {
+            throw StableAudioError.setupFailed("原曲を読み込めませんでした")
+        }
+        do {
+            try file.read(into: sourceBuffer)
+        } catch {
+            throw StableAudioError.setupFailed("原曲のデコードに失敗しました")
+        }
+
+        let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 44_100,
+            channels: 2,
+            interleaved: false
+        )!
+        let needsConversion =
+            sourceFormat.sampleRate != 44_100
+            || sourceFormat.channelCount != 2
+            || sourceFormat.commonFormat != .pcmFormatFloat32
+            || sourceFormat.isInterleaved
+
+        let stereo: AVAudioPCMBuffer
+        if needsConversion {
+            guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+                throw StableAudioError.setupFailed("原曲の形式を変換できませんでした")
+            }
+            let ratio = 44_100 / sourceFormat.sampleRate
+            let capacity = AVAudioFrameCount(Double(sourceBuffer.frameLength) * ratio) + 2048
+            guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity)
+            else {
+                throw StableAudioError.setupFailed("原曲の変換バッファを確保できませんでした")
+            }
+            var conversionError: NSError?
+            var supplied = false
+            converter.convert(to: output, error: &conversionError) { _, status in
+                if supplied {
+                    status.pointee = .endOfStream
+                    return nil
+                }
+                supplied = true
+                status.pointee = .haveData
+                return sourceBuffer
+            }
+            if let conversionError {
+                throw StableAudioError.setupFailed(
+                    "原曲の変換に失敗しました: \(conversionError.localizedDescription)"
+                )
+            }
+            stereo = output
+        } else {
+            stereo = sourceBuffer
+        }
+
+        guard let channels = stereo.floatChannelData else {
             throw StableAudioError.setupFailed("原曲の変換に失敗しました")
         }
-        return destination
+        let limit = min(Int(stereo.frameLength), maxSeconds * 44_100)
+        guard limit > 0 else {
+            throw StableAudioError.setupFailed("原曲の変換に失敗しました")
+        }
+        var left = [Float](repeating: 0, count: limit)
+        var right = [Float](repeating: 0, count: limit)
+        for index in 0..<limit {
+            left[index] = channels[0][index]
+            right[index] = channels[1][index]
+        }
+        return (left, right)
+    }
+
+    /// 16bit PCM の WAV を自前で書き出す（AVAudioFileの形式不一致による -50 を回避）
+    private func writeWAV(left: [Float], right: [Float], to url: URL) throws {
+        let frames = min(left.count, right.count)
+        let dataSize = UInt32(frames * 4)
+        var data = Data(capacity: 44 + Int(dataSize))
+        func append<T: FixedWidthInteger>(_ value: T) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        data.append(contentsOf: Array("RIFF".utf8))
+        append(UInt32(36 + dataSize))
+        data.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(UInt32(16))
+        append(UInt16(1))
+        append(UInt16(2))
+        append(UInt32(44_100))
+        append(UInt32(44_100 * 4))
+        append(UInt16(4))
+        append(UInt16(16))
+        data.append(contentsOf: Array("data".utf8))
+        append(dataSize)
+        for index in 0..<frames {
+            let l = Int16(max(-1, min(1, left[index])) * 32_767)
+            let r = Int16(max(-1, min(1, right[index])) * 32_767)
+            append(l)
+            append(r)
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            throw StableAudioError.setupFailed("原曲の変換ファイルを書き出せませんでした")
+        }
     }
 
     func generate(_ request: GenerationRequest) async throws -> URL {
@@ -502,6 +561,7 @@ final class StableAudioManager: ObservableObject {
         }
         if let initAudio = request.initAudioURL {
             let wav = try prepareInitAudio(initAudio, seconds: request.seconds)
+            defer { try? FileManager.default.removeItem(at: wav) }
             arguments += [
                 "--init-audio", wav.path,
                 "--init-noise-level", String(request.initNoiseLevel),
