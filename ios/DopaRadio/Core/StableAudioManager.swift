@@ -559,13 +559,19 @@ final class StableAudioManager: ObservableObject {
         if let seed = request.seed {
             arguments += ["--seed", String(seed)]
         }
+        var temporaryInitAudio: URL?
         if let initAudio = request.initAudioURL {
             let wav = try prepareInitAudio(initAudio, seconds: request.seconds)
-            defer { try? FileManager.default.removeItem(at: wav) }
+            temporaryInitAudio = wav
             arguments += [
                 "--init-audio", wav.path,
                 "--init-noise-level", String(request.initNoiseLevel),
             ]
+        }
+        defer {
+            if let temporaryInitAudio {
+                try? FileManager.default.removeItem(at: temporaryInitAudio)
+            }
         }
 
         appendLog("生成開始: \(request.bundle.rawValue) / \(request.seconds)秒 / \(request.steps)ステップ")
