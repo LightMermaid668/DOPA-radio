@@ -48,11 +48,12 @@ struct MacShellView: View {
             sidebar
         } detail: {
             detail
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if player.currentTrack != nil {
-                MacPlayerBar(showNowPlaying: $showNowPlaying)
-            }
+                // プレイヤーバーは詳細側だけに置き、左サイドバーと被らせない
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if player.currentTrack != nil {
+                        MacPlayerBar(showNowPlaying: $showNowPlaying)
+                    }
+                }
         }
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
