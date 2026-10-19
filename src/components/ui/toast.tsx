@@ -45,8 +45,7 @@ export function ToastHost() {
     <div
       className="pointer-events-none fixed inset-x-0 z-[90] flex flex-col items-center gap-2 px-4"
       style={{
-        bottom:
-          "calc(var(--dopa-tabbar-offset, 0px) + 7rem + env(safe-area-inset-bottom))",
+        bottom: "calc(var(--dopa-tabbar-offset, 0px) + 7rem)",
       }}
       aria-live="polite"
     >

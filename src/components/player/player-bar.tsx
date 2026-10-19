@@ -570,15 +570,13 @@ export function PlayerBar() {
       <div
         aria-hidden
         style={{
-          height:
-            "calc(8rem + env(safe-area-inset-bottom) + var(--dopa-tabbar-offset, 0px))",
+          height: "calc(8rem + var(--dopa-tabbar-offset, 0px))",
         }}
       />
       <div
-        className="animate-slide-up fixed inset-x-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
+        className="app-player-bar animate-slide-up fixed inset-x-0 z-50 border-t border-dopa-800 bg-dopa-900/95 backdrop-blur"
         style={{
           bottom: "var(--dopa-tabbar-offset, 0px)",
-          paddingBottom: "env(safe-area-inset-bottom)",
           viewTransitionName: "player-bar",
         }}
       >

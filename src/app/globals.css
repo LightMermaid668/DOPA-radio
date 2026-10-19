@@ -178,7 +178,20 @@ main {
 
 @media (max-width: 767px) {
   body.dopa-shell-active {
-    --dopa-tabbar-offset: 4rem;
+    /* タブバー本体(4rem) + ホームインジケータ分。プレイヤーバーがタブバーに被らない高さ */
+    --dopa-tabbar-offset: calc(4rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* プレイヤーバー: シェル無し（ログイン等）では下端セーフエリアを確保、
+   シェル有り（タブバー上）ではタブバー側が確保済みなので二重に取らない */
+.app-player-bar {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (max-width: 767px) {
+  body.dopa-shell-active .app-player-bar {
+    padding-bottom: 0px;
   }
 }
 
