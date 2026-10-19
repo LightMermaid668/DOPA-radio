@@ -32,22 +32,54 @@ struct AIComposeView: View {
         var title: String { url.deletingPathExtension().lastPathComponent }
     }
 
-    private let presets: [(label: String, prompt: String)] = [
-        (
-            "ドパトランス",
-            "high-energy Japanese EDM trance, 170 BPM, four-on-the-floor kick, pumping sidechain bass, supersaw chords, euphoric festival drop, instrumental"
+    struct Preset {
+        let label: String
+        let prompt: String
+        let negative: String
+        let cfg: Double
+        let seconds: Double
+    }
+
+    private let presets: [Preset] = [
+        Preset(
+            label: "ドパトランス",
+            prompt:
+                "high-energy Japanese EDM trance at 175 BPM, relentless four-on-the-floor kick, hard pumping sidechain bass, massive supersaw chords, euphoric lead melody, snare roll build-up, white noise riser, explosive festival drop, loud punchy compressed mix, nonstop adrenaline, instrumental",
+            negative: "vocals, singing, slow, calm, ambient, quiet, sparse, lo-fi",
+            cfg: 4.0,
+            seconds: 120
         ),
-        (
-            "メガサビ",
-            "massive J-pop EDM, 165 BPM, huge supersaw lead melody, punchy drums, dramatic build-up, explosive drop, instrumental"
+        Preset(
+            label: "メガサビ",
+            prompt:
+                "massive J-EDM anthem at 170 BPM, gigantic supersaw chorus hook repeating, hard kick and clap, offbeat bass pump, dramatic build-up with risers and snare rolls, huge explosive drop, main stage festival energy, bright and loud, instrumental",
+            negative: "vocals, singing, slow, calm, ambient, quiet, sparse",
+            cfg: 4.0,
+            seconds: 120
         ),
-        (
-            "キラキラ",
-            "kawaii future bass, 150 BPM, sparkling synths, cute plucky melody, hard-hitting drop, instrumental"
+        Preset(
+            label: "限界ドパ",
+            prompt:
+                "maximum dopamine hyper EDM at 190 BPM, frenetic nonstop energy, hardstyle-influenced festival drop, distorted hard bass, rapid arpeggios, intense snare rolls, chaotic euphoric hook every few seconds, extremely dense loud mix, instrumental",
+            negative: "vocals, calm, slow, ambient, minimal, quiet, sparse",
+            cfg: 4.5,
+            seconds: 90
         ),
-        (
-            "チルドパ",
-            "chill dopamine groove, 120 BPM, warm deep bass, relaxed head-nodding beat, lo-fi synths, instrumental"
+        Preset(
+            label: "キラキラ",
+            prompt:
+                "kawaii future bass at 155 BPM, sparkling detuned synths, cute plucky lead melody, big sidechained chords, punchy kick and claps, energetic glittering drop, bright euphoric hyper vibe, instrumental",
+            negative: "vocals, slow, dark, ambient, quiet",
+            cfg: 3.5,
+            seconds: 90
+        ),
+        Preset(
+            label: "チルドパ",
+            prompt:
+                "chill dopamine groove at 125 BPM, warm deep sub bass, relaxed but bouncy beat, smooth jazzy chords, lo-fi synth textures, head-nodding groove, instrumental",
+            negative: "vocals, aggressive, harsh, distorted",
+            cfg: 3.0,
+            seconds: 90
         ),
     ]
 
@@ -278,7 +310,7 @@ struct AIComposeView: View {
             HStack(spacing: 6) {
                 ForEach(presets, id: \.label) { preset in
                     Button(preset.label) {
-                        prompt = preset.prompt
+                        applyPreset(preset)
                     }
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 10)
@@ -525,6 +557,13 @@ struct AIComposeView: View {
     }
 
     // MARK: - アクション
+
+    private func applyPreset(_ preset: Preset) {
+        prompt = preset.prompt
+        negativePrompt = preset.negative
+        cfg = preset.cfg
+        seconds = min(Double(bundle.maxSeconds), preset.seconds)
+    }
 
     private func generate() {
         let request = StableAudioManager.GenerationRequest(
