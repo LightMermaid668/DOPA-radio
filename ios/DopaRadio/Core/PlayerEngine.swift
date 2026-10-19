@@ -76,6 +76,16 @@ final class PlayerEngine: ObservableObject {
 
     var crossfadeSeconds: Double = 3.0
 
+    /// ユーザー音量（Mac版のプレイヤーバーで使用）
+    @Published var userVolume: Float = 1 {
+        didSet {
+            UserDefaults.standard.set(userVolume, forKey: "dopa.volume")
+            if !isCrossfading {
+                main.volume = userVolume
+            }
+        }
+    }
+
     let settings = AudioSettingsStore.shared
 
     var currentTrack: PlayerTrack? {
@@ -141,11 +151,12 @@ final class PlayerEngine: ObservableObject {
         dopaMode = (UserDefaults.standard.object(forKey: "dopa.dopa") as? Bool) ?? false
         repeatMode = RepeatMode(rawValue: UserDefaults.standard.integer(forKey: "dopa.repeat")) ?? .off
         shuffleEnabled = (UserDefaults.standard.object(forKey: "dopa.shuffle") as? Bool) ?? false
+        userVolume = (UserDefaults.standard.object(forKey: "dopa.volume") as? Float) ?? 1
         lastAppliedPitch = settings.pitchSemitones
 
         for player in [playerA, playerB] {
             player.actionAtItemEnd = .pause
-            player.volume = 1
+            player.volume = userVolume
             player.defaultRate = Float(clampedRate(settings.userRate))
         }
 
@@ -385,7 +396,7 @@ final class PlayerEngine: ObservableObject {
         let rate = Float(clampedRate(settings.userRate))
         main.defaultRate = rate
         main.replaceCurrentItem(with: item)
-        main.volume = 1
+        main.volume = userVolume
 
         // スタジオ（Tap）を接続
         if settings.studioActive {
@@ -421,7 +432,7 @@ final class PlayerEngine: ObservableObject {
 
         if chorusOnly, seekTarget > 1, position <= 3 {
             main.volume = 0
-            rampVolume(to: 1, duration: 0.8)
+            rampVolume(to: userVolume, duration: 0.8)
         }
         updateNowPlaying(force: true)
 
@@ -455,8 +466,8 @@ final class PlayerEngine: ObservableObject {
         djSwapDone = false
         secondary.pause()
         secondary.replaceCurrentItem(with: nil)
-        secondary.volume = 1
-        main.volume = 1
+        secondary.volume = userVolume
+        main.volume = userVolume
         mainDSP?.highpassOn = false
         secondaryDSP = nil
     }
@@ -547,10 +558,10 @@ final class PlayerEngine: ObservableObject {
         let oldMain = main
         oldMain.pause()
         oldMain.replaceCurrentItem(with: nil)
-        oldMain.volume = 1
+        oldMain.volume = userVolume
 
         mainIsA.toggle()
-        main.volume = 1
+        main.volume = userVolume
         mainDSP = secondaryDSP
         secondaryDSP = nil
         mainDSP?.highpassOn = false
@@ -629,8 +640,8 @@ final class PlayerEngine: ObservableObject {
         if let startedAt = crossfadeStartedAt, pendingNextIndex != nil {
             let elapsed = Date().timeIntervalSince(startedAt)
             let ratio = min(1, max(0, elapsed / crossfadeDuration))
-            secondary.volume = Float(sin(ratio * Double.pi / 2))
-            main.volume = Float(cos(ratio * Double.pi / 2))
+            secondary.volume = Float(sin(ratio * Double.pi / 2)) * userVolume
+            main.volume = Float(cos(ratio * Double.pi / 2)) * userVolume
 
             // DJミックス: 中間でベーススワップ
             if settings.djMix, !djSwapDone, ratio >= 0.5 {

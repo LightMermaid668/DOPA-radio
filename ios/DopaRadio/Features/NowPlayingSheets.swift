@@ -85,58 +85,48 @@ struct QueueSheet: View {
     }
 }
 
-/// スタジオ（ネイティブDSP: EQ・低音ブースト・ボーカル除去・8D）
-struct StudioSheet: View {
+/// スタジオ設定の中身（iOSシート / Mac設定で共用）
+struct StudioListContent: View {
     @ObservedObject private var settings = AudioSettingsStore.shared
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("イコライザー") {
-                    Toggle("イコライザー", isOn: $settings.eqEnabled)
-                        .tint(DopaColor.accent)
+        List {
+            Section("イコライザー") {
+                Toggle("イコライザー", isOn: $settings.eqEnabled)
+                    .tint(DopaColor.accent)
 
-                    Group {
-                        sliderRow("低音", value: $settings.eqBass, range: -15...15, suffix: "dB")
-                        sliderRow("中音", value: $settings.eqMid, range: -15...15, suffix: "dB")
-                        sliderRow("高音", value: $settings.eqTreble, range: -15...15, suffix: "dB")
-                    }
-                    .disabled(!settings.eqEnabled)
-                    .opacity(settings.eqEnabled ? 1 : 0.45)
+                Group {
+                    sliderRow("低音", value: $settings.eqBass, range: -15...15, suffix: "dB")
+                    sliderRow("中音", value: $settings.eqMid, range: -15...15, suffix: "dB")
+                    sliderRow("高音", value: $settings.eqTreble, range: -15...15, suffix: "dB")
                 }
-                .listRowBackground(DopaColor.card)
-
-                Section("低音ブースト") {
-                    sliderRow("ブースト+", value: $settings.bassBoost, range: 0...15, suffix: "dB")
-                }
-                .listRowBackground(DopaColor.card)
-
-                Section {
-                    sliderRow("ボーカル除去", value: $settings.vocalRemoval, range: 0...100, suffix: "%")
-                } footer: {
-                    Text("中央のボーカルを打ち消します（カラオケ方式）。※モノラル音源は100%で無音になります。")
-                }
-                .listRowBackground(DopaColor.card)
-
-                Section {
-                    Toggle("8Dオーディオ（回転サウンド）", isOn: $settings.eightD)
-                        .tint(DopaColor.accent)
-                } footer: {
-                    Text("ネイティブDSPで処理するため、バックグラウンド再生中も効きます（初回の反映に少し時間がかかることがあります）。")
-                }
-                .listRowBackground(DopaColor.card)
+                .disabled(!settings.eqEnabled)
+                .opacity(settings.eqEnabled ? 1 : 0.45)
             }
-            .scrollContentBackground(.hidden)
-            .background(DopaColor.background)
-            .navigationTitle("スタジオ")
-            .dopaInlineTitle()
-            .toolbar {
-                ToolbarItem(placement: .dopaTrailing) {
-                    Button("閉じる") { dismiss() }
-                }
+            .listRowBackground(DopaColor.card)
+
+            Section("低音ブースト") {
+                sliderRow("ブースト+", value: $settings.bassBoost, range: 0...15, suffix: "dB")
             }
+            .listRowBackground(DopaColor.card)
+
+            Section {
+                sliderRow("ボーカル除去", value: $settings.vocalRemoval, range: 0...100, suffix: "%")
+            } footer: {
+                Text("中央のボーカルを打ち消します（カラオケ方式）。※モノラル音源は100%で無音になります。")
+            }
+            .listRowBackground(DopaColor.card)
+
+            Section {
+                Toggle("8Dオーディオ（回転サウンド）", isOn: $settings.eightD)
+                    .tint(DopaColor.accent)
+            } footer: {
+                Text("ネイティブDSPで処理するため、バックグラウンド再生中も効きます（初回の反映に少し時間がかかることがあります）。")
+            }
+            .listRowBackground(DopaColor.card)
         }
+        .scrollContentBackground(.hidden)
+        .background(DopaColor.background)
     }
 
     @ViewBuilder
@@ -157,6 +147,24 @@ struct StudioSheet: View {
             }
             Slider(value: value, in: range, step: 1)
                 .tint(DopaColor.accent)
+        }
+    }
+}
+
+/// スタジオ（ネイティブDSP: EQ・低音ブースト・ボーカル除去・8D）
+struct StudioSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            StudioListContent()
+                .navigationTitle("スタジオ")
+                .dopaInlineTitle()
+                .toolbar {
+                    ToolbarItem(placement: .dopaTrailing) {
+                        Button("閉じる") { dismiss() }
+                    }
+                }
         }
     }
 }

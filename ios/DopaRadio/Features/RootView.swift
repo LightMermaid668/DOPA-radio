@@ -19,7 +19,11 @@ struct RootView: View {
             } else if auth.user == nil {
                 LoginView()
             } else {
+                #if os(macOS)
+                MacShellView()
+                #else
                 mainTabs
+                #endif
             }
         }
         .preferredColorScheme(.dark)

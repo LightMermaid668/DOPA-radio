@@ -27,6 +27,11 @@ struct DopaRadioApp: App {
                 .preferredColorScheme(.dark)
                 .tint(DopaColor.accent)
         }
+        #if os(macOS)
+        .commands {
+            MacPlayerCommands(player: player)
+        }
+        #endif
     }
 }
 
