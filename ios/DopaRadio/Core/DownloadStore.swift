@@ -161,15 +161,35 @@ extension DownloadStore: URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        // 一時ファイルはこのコールバックを抜けるとシステムに削除されるため、
+        // メインスレッドへ渡す前にまず同期で退避させる（これを怠ると必ず失敗する）
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dopa-dl-\(UUID().uuidString).tmp")
+        var moveFailed = false
+        do {
+            try FileManager.default.moveItem(at: location, to: staging)
+        } catch {
+            moveFailed = true
+        }
+
         Task { @MainActor in
-            guard let meta = pending.removeValue(forKey: downloadTask.taskIdentifier) else { return }
+            guard let meta = pending.removeValue(forKey: downloadTask.taskIdentifier) else {
+                try? FileManager.default.removeItem(at: staging)
+                return
+            }
+            guard !moveFailed else {
+                failedTrackIds.insert(meta.trackId)
+                progress[meta.trackId] = nil
+                return
+            }
+
             let fileName = "\(meta.trackId).m4a"
             let destination = directory.appendingPathComponent(fileName)
             do {
                 if FileManager.default.fileExists(atPath: destination.path) {
                     try FileManager.default.removeItem(at: destination)
                 }
-                try FileManager.default.moveItem(at: location, to: destination)
+                try FileManager.default.moveItem(at: staging, to: destination)
                 let attributes = try? FileManager.default.attributesOfItem(atPath: destination.path)
                 let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
                 let record = DownloadRecord(
@@ -187,6 +207,7 @@ extension DownloadStore: URLSessionDownloadDelegate {
                 records.insert(record, at: 0)
                 saveIndex()
             } catch {
+                try? FileManager.default.removeItem(at: staging)
                 failedTrackIds.insert(meta.trackId)
             }
             progress[meta.trackId] = nil

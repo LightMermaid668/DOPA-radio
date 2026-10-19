@@ -146,6 +146,11 @@ struct PlaylistDetailView: View {
         }
 
         if !items.isEmpty {
+            let failed = items.filter { item in
+                guard let trackId = item.trackId else { return false }
+                return downloads.failedTrackIds.contains(trackId)
+            }.count
+
             HStack(spacing: 10) {
                 if downloading {
                     ProgressView(value: downloadFraction(display))
@@ -168,13 +173,20 @@ struct PlaylistDetailView: View {
                     Button {
                         downloadPlaylist(display)
                     } label: {
-                        Label("プレイリストをダウンロード", systemImage: "arrow.down.circle")
-                            .font(.footnote.weight(.semibold))
+                        Label(
+                            failed > 0 ? "再試行" : "プレイリストをダウンロード",
+                            systemImage: "arrow.down.circle"
+                        )
+                        .font(.footnote.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
-                    Text("\(downloaded)/\(items.count)曲")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        failed > 0
+                            ? "\(downloaded)/\(items.count)曲 ・ \(failed)曲失敗"
+                            : "\(downloaded)/\(items.count)曲"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(failed > 0 ? .orange : .secondary)
                 }
                 Spacer()
             }
