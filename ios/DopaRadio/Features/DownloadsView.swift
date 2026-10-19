@@ -28,6 +28,7 @@ struct DownloadsView: View {
                 }
             }
         }
+        .dopaSheetFrame(width: 560, height: 640)
     }
 
     private var list: some View {

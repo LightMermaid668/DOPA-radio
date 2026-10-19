@@ -153,6 +153,7 @@ private struct CreatePlaylistSheet: View {
                 }
             }
         }
+        .dopaSheetFrame(width: 460, height: 300)
     }
 
     private func create() async {

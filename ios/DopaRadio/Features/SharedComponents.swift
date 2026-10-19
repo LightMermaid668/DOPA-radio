@@ -29,6 +29,15 @@ extension View {
         self
         #endif
     }
+
+    /// macOSのシートは固有サイズが無いと極小になるため、既定サイズを与える
+    func dopaSheetFrame(width: CGFloat = 520, height: CGFloat = 640) -> some View {
+        #if os(macOS)
+        frame(minWidth: width, minHeight: height)
+        #else
+        self
+        #endif
+    }
 }
 
 /// iOSではナビバー左右、macOSでは navigation / primaryAction に割り当てる

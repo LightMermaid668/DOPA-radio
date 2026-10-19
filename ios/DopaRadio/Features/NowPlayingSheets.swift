@@ -54,6 +54,7 @@ struct QueueSheet: View {
                 }
             }
         }
+        .dopaSheetFrame(width: 480, height: 620)
     }
 
     private func row(_ track: PlayerTrack, isCurrent: Bool) -> some View {
@@ -166,6 +167,7 @@ struct StudioSheet: View {
                     }
                 }
         }
+        .dopaSheetFrame(width: 520, height: 640)
     }
 }
 
@@ -249,5 +251,6 @@ struct SpeedPitchSheet: View {
                 }
             }
         }
+        .dopaSheetFrame(width: 540, height: 660)
     }
 }

@@ -94,6 +94,7 @@ struct UploadView: View {
                 }
             }
         }
+        .dopaSheetFrame(width: 560, height: 660)
     }
 
     @ViewBuilder
