@@ -16,7 +16,7 @@ enum MacSection: String, CaseIterable, Identifiable {
         case .playlists: return "プレイリスト"
         case .search: return "検索"
         case .downloads: return "ダウンロード済み"
-        case .compose: return "AIドパ曲作曲"
+        case .compose: return "AI作曲"
         case .settings: return "設定"
         }
     }
@@ -106,7 +106,7 @@ struct MacShellView: View {
         case .playlists: PlaylistsView()
         case .search: SearchView()
         case .downloads: DownloadsView()
-        case .compose: ComposeView()
+        case .compose: AIComposeView()
         case .settings: MacSettingsView()
         }
     }
