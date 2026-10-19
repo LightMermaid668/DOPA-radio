@@ -590,6 +590,8 @@ final class StableAudioManager: ObservableObject {
         guard FileManager.default.fileExists(atPath: outputURL.path) else {
             throw StableAudioError.generationFailed
         }
+        // SA3はピーク超過のまま書き出すことがあり、クリップ歪み（逆再生っぽい音）の原因になる
+        polishOutput(at: outputURL)
         appendLog(
             String(
                 format: "生成完了（%.1f秒）: %@",
@@ -598,6 +600,67 @@ final class StableAudioManager: ObservableObject {
             )
         )
         return outputURL
+    }
+
+    /// 生成WAVのクリップ歪みを抑える（ピーク正規化＋ソフトリミッター）
+    private func polishOutput(at url: URL) {
+        guard let file = try? AVAudioFile(forReading: url) else { return }
+        let format = file.processingFormat
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: format, frameCapacity: AVAudioFrameCount(file.length)
+        ), (try? file.read(into: buffer)) != nil,
+            let channels = buffer.floatChannelData
+        else { return }
+
+        let frames = Int(buffer.frameLength)
+        let channelCount = Int(format.channelCount)
+        guard frames > 0, channelCount > 0 else { return }
+
+        var peak: Float = 0.0001
+        for channel in 0..<channelCount {
+            for index in 0..<frames {
+                peak = max(peak, abs(channels[channel][index]))
+            }
+        }
+
+        // ピークが0.95を超える場合のみ補正（歪みの原因を取り除く）
+        guard peak > 0.95 else { return }
+        let gain = 0.95 / peak
+        let threshold: Float = 0.72
+        for channel in 0..<channelCount {
+            for index in 0..<frames {
+                var value = channels[channel][index] * gain
+                // ソフトニー: 閾値以上をなだらかに圧縮して急峻なクリップを避ける
+                if abs(value) > threshold {
+                    let sign: Float = value < 0 ? -1 : 1
+                    let excess = abs(value) - threshold
+                    value = sign * (threshold + (1 - threshold) * tanh(excess / (1 - threshold)))
+                }
+                channels[channel][index] = value
+            }
+        }
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+            AVNumberOfChannelsKey: channelCount,
+            AVSampleRateKey: format.sampleRate,
+        ]
+        let temporary = url.deletingPathExtension().appendingPathExtension("tmp.wav")
+        guard let output = try? AVAudioFile(forWriting: temporary, settings: settings) else {
+            return
+        }
+        do {
+            try output.write(from: buffer)
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            return
+        }
+        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.moveItem(at: temporary, to: url)
+        appendLog("ピーク補正を適用しました（元ピーク \(String(format: "%.2f", peak))）")
     }
 
     // MARK: - プロセス実行

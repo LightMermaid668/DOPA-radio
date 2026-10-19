@@ -14,7 +14,7 @@ struct AIComposeView: View {
     @State private var bundle: StableAudioManager.ModelBundle = .smallMusic
     @State private var seconds: Double = 60
     @State private var steps: Double = 8
-    @State private var cfg: Double = 1.0
+    @State private var cfg: Double = 2.6
     @State private var randomSeed = true
     @State private var seedText = ""
     @State private var title = ""
@@ -54,7 +54,7 @@ struct AIComposeView: View {
             prompt:
                 "Norinoricore remix, 175 BPM, J-Core, Eurobeat, Happy Hardcore, Hyperpop, heavy four-on-the-floor kick, fast tempo, high energy, pounding sidechain bass, supersaw chords, euphoric lead melody, snare roll build, explosive drop, extremely dense loud mix, instrumental",
             negative: "vocals, singing, slow, calm, ambient, quiet, sparse, lo-fi",
-            cfg: 4.5,
+            cfg: 2.8,
             seconds: 120
         ),
         Preset(
@@ -62,7 +62,7 @@ struct AIComposeView: View {
             prompt:
                 "Eurobeat at 165 BPM, high-energy four-on-the-floor kick, rolling octave bass, bright supersaw stabs, catchy lead hook, snare fills, racing adrenaline feel, loud punchy mix, instrumental",
             negative: "vocals, slow, calm, ambient, quiet, sparse",
-            cfg: 4.0,
+            cfg: 2.6,
             seconds: 120
         ),
         Preset(
@@ -70,7 +70,7 @@ struct AIComposeView: View {
             prompt:
                 "Happy Hardcore at 180 BPM, bouncy four-on-the-floor kick, euphoric piano and supersaw leads, hoover bass, uplifting happy melody, high energy festival drop, dense and loud, instrumental",
             negative: "vocals, slow, calm, ambient, quiet, dark",
-            cfg: 4.0,
+            cfg: 2.6,
             seconds: 120
         ),
         Preset(
@@ -78,7 +78,7 @@ struct AIComposeView: View {
             prompt:
                 "J-Core at 190 BPM, frantic hyper energy, hard kick, distorted bass, rapid arpeggios, chaotic euphoric hook, intense snare rolls, maximum density, instrumental",
             negative: "vocals, calm, slow, ambient, minimal, quiet",
-            cfg: 4.5,
+            cfg: 2.8,
             seconds: 90
         ),
         Preset(
@@ -86,7 +86,7 @@ struct AIComposeView: View {
             prompt:
                 "kawaii Hyperpop future bass at 160 BPM, sparkling detuned synths, cute plucky lead, big sidechained chords, punchy kick, glittering energetic drop, bright euphoric vibe, instrumental",
             negative: "vocals, slow, dark, ambient, quiet",
-            cfg: 3.5,
+            cfg: 2.4,
             seconds: 90
         ),
     ]
@@ -418,6 +418,11 @@ struct AIComposeView: View {
                 .background(DopaColor.card, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(DopaColor.border))
 
+            if cfg > 3.5 {
+                Text("CFGが高いと音割れして「逆再生っぽい」歪みになります。2.5〜3.0推奨。")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
             if cfg != 1.0 {
                 TextField("ネガティブプロンプト（避けたい要素: vocals, distorted...）", text: $negativePrompt)
                     .textFieldStyle(.plain)
@@ -439,8 +444,8 @@ struct AIComposeView: View {
                 valueLabel: "\(Int(steps))（8が標準）"
             )
             sliderRow(
-                "ガイダンス(CFG)", value: $cfg, range: 0...10, step: 0.5,
-                valueLabel: cfg == 1.0 ? "OFF" : String(format: "%.1f", cfg)
+                "ガイダンス(CFG)", value: $cfg, range: 1...6, step: 0.1,
+                valueLabel: cfg <= 1.0 ? "OFF" : String(format: "%.1f", cfg)
             )
 
             HStack(spacing: 12) {
