@@ -72,9 +72,9 @@ struct UploadView: View {
             .scrollContentBackground(.hidden)
             .background(DopaColor.background)
             .navigationTitle("アップロード")
-            .navigationBarTitleDisplayMode(.inline)
+            .dopaInlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .dopaLeading) {
                     Button("閉じる") { dismiss() }
                         .disabled(manager.isBusy)
                 }

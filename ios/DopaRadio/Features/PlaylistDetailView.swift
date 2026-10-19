@@ -12,6 +12,7 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var player: PlayerEngine
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @ObservedObject private var downloads = DownloadStore.shared
 
     @State private var display: PlaylistDisplay?
     @State private var errorMessage: String?
@@ -36,10 +37,10 @@ struct PlaylistDetailView: View {
         }
         .background(DopaColor.background)
         .navigationTitle(display?.title ?? "プレイリスト")
-        .navigationBarTitleDisplayMode(.inline)
+        .dopaInlineTitle()
         .toolbar {
             if let display, display.isOwn {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Menu {
                         Button("プレイリストを削除", role: .destructive) {
                             showDeleteConfirm = true
@@ -86,6 +87,8 @@ struct PlaylistDetailView: View {
                         .foregroundStyle(.black)
                         .disabled(playableItems(display).isEmpty)
                     }
+
+                    playlistDownloadRow(display)
                 }
                 .listRowBackground(DopaColor.background)
             }
@@ -111,6 +114,98 @@ struct PlaylistDetailView: View {
             return "\(display.items.count)曲 ・ 自分のプレイリスト"
         }
         return "\(display.items.count)曲 ・ \(display.ownerName ?? "メンバー")さん"
+    }
+
+    // MARK: - プレイリストのダウンロード
+
+    private func downloadableItems(_ display: PlaylistDisplay) -> [PlaylistDisplayItem] {
+        display.items.filter { $0.isPlayableUpload }
+    }
+
+    private func downloadFraction(_ display: PlaylistDisplay) -> Double {
+        let items = downloadableItems(display)
+        guard !items.isEmpty else { return 0 }
+        let total = items.reduce(0.0) { sum, item in
+            guard let trackId = item.trackId else { return sum }
+            if downloads.isDownloaded(trackId) { return sum + 1 }
+            return sum + (downloads.progress[trackId] ?? 0)
+        }
+        return total / Double(items.count)
+    }
+
+    @ViewBuilder
+    private func playlistDownloadRow(_ display: PlaylistDisplay) -> some View {
+        let items = downloadableItems(display)
+        let downloaded = items.filter { item in
+            guard let trackId = item.trackId else { return false }
+            return downloads.isDownloaded(trackId)
+        }.count
+        let downloading = items.contains { item in
+            guard let trackId = item.trackId else { return false }
+            return downloads.isDownloading(trackId)
+        }
+
+        if !items.isEmpty {
+            HStack(spacing: 10) {
+                if downloading {
+                    ProgressView(value: downloadFraction(display))
+                        .frame(width: 90)
+                    Text("保存中… \(downloaded)/\(items.count)曲")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if downloaded == items.count {
+                    Button(role: .destructive) {
+                        deletePlaylistDownloads(display)
+                    } label: {
+                        Label("ダウンロードを削除", systemImage: "trash")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    Text("オフライン保存済み")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        downloadPlaylist(display)
+                    } label: {
+                        Label("プレイリストをダウンロード", systemImage: "arrow.down.circle")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    Text("\(downloaded)/\(items.count)曲")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func downloadPlaylist(_ display: PlaylistDisplay) {
+        Haptics.tap()
+        for item in downloadableItems(display) {
+            guard let trackId = item.trackId,
+                !downloads.isDownloaded(trackId),
+                !downloads.isDownloading(trackId)
+            else { continue }
+            downloads.download(
+                trackId: trackId,
+                title: item.title,
+                artist: item.artist,
+                durationSec: item.durationSec,
+                chorusStartSec: item.chorusStartSec,
+                chorusEndSec: item.chorusEndSec
+            )
+        }
+    }
+
+    private func deletePlaylistDownloads(_ display: PlaylistDisplay) {
+        Haptics.tap()
+        for item in downloadableItems(display) {
+            guard let trackId = item.trackId else { continue }
+            downloads.delete(trackId)
+        }
     }
 
     @ViewBuilder
@@ -143,6 +238,30 @@ struct PlaylistDetailView: View {
         }
         .listRowBackground(DopaColor.background)
         .listRowSeparatorTint(DopaColor.border)
+        .contextMenu {
+            if item.isPlayableUpload, let trackId = item.trackId {
+                if downloads.isDownloaded(trackId) {
+                    Button(role: .destructive) {
+                        downloads.delete(trackId)
+                    } label: {
+                        Label("ダウンロードを削除", systemImage: "trash")
+                    }
+                } else if !downloads.isDownloading(trackId) {
+                    Button {
+                        downloads.download(
+                            trackId: trackId,
+                            title: item.title,
+                            artist: item.artist,
+                            durationSec: item.durationSec,
+                            chorusStartSec: item.chorusStartSec,
+                            chorusEndSec: item.chorusEndSec
+                        )
+                    } label: {
+                        Label("ダウンロード", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
+        }
     }
 
     private func trailingView(for item: PlaylistDisplayItem, isOwn: Bool) -> AnyView? {

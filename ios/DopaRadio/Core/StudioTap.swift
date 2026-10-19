@@ -1,6 +1,8 @@
 import AVFoundation
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// AVPlayerItem にMTAudioProcessingTap（ネイティブDSP）を接続する
 enum StudioTap {
@@ -73,12 +75,16 @@ private let tapProcess: MTAudioProcessingTapProcessCallback = {
 
 enum Haptics {
     static func tap() {
+        #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
+        #endif
     }
 
     static func selection() {
+        #if canImport(UIKit)
         let generator = UISelectionFeedbackGenerator()
         generator.selectionChanged()
+        #endif
     }
 }

@@ -30,7 +30,7 @@ struct DiscoverView: View {
             .background(DopaColor.background)
             .navigationTitle("ディスカバー")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Button {
                         Task { await load() }
                     } label: {

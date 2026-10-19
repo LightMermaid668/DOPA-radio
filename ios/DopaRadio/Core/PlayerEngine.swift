@@ -1,7 +1,13 @@
 import AVFoundation
 import Combine
 import MediaPlayer
+#if os(iOS)
 import UIKit
+typealias NowPlayingImage = UIImage
+#else
+import AppKit
+typealias NowPlayingImage = NSImage
+#endif
 
 /// リピートモード
 enum RepeatMode: Int {
@@ -182,7 +188,9 @@ final class PlayerEngine: ObservableObject {
             main.pause()
             isPlaying = false
         } else {
+            #if os(iOS)
             try? AVAudioSession.sharedInstance().setActive(true)
+            #endif
             main.play()
             isPlaying = true
         }
@@ -867,6 +875,7 @@ final class PlayerEngine: ObservableObject {
             }
         }
 
+        #if os(iOS)
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: nil,
@@ -899,6 +908,7 @@ final class PlayerEngine: ObservableObject {
                 }
             }
         }
+        #endif
     }
 
     // MARK: - ロック画面 / Now Playing
@@ -977,7 +987,7 @@ final class PlayerEngine: ObservableObject {
         guard let url = track.artworkURL else { return }
         Task { [weak self] in
             guard let data = await APIClient.shared.fetchData(url),
-                let image = UIImage(data: data)
+                let image = NowPlayingImage(data: data)
             else { return }
             await MainActor.run {
                 guard let self else { return }

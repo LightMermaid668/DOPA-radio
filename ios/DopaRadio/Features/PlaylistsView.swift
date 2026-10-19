@@ -40,7 +40,7 @@ struct PlaylistsView: View {
             .background(DopaColor.background)
             .navigationTitle("プレイリスト")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Button {
                         showCreate = true
                     } label: {
@@ -146,9 +146,9 @@ private struct CreatePlaylistSheet: View {
             .padding(20)
             .background(DopaColor.background)
             .navigationTitle("新しいプレイリスト")
-            .navigationBarTitleDisplayMode(.inline)
+            .dopaInlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .dopaLeading) {
                     Button("キャンセル") { dismiss() }
                 }
             }

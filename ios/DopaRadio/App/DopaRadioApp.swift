@@ -7,6 +7,7 @@ struct DopaRadioApp: App {
     @StateObject private var player = PlayerEngine()
 
     init() {
+        #if os(iOS)
         // バックグラウンド再生・ロック画面再生のためのオーディオセッション設定
         do {
             let session = AVAudioSession.sharedInstance()
@@ -15,6 +16,7 @@ struct DopaRadioApp: App {
         } catch {
             print("[app] audio session error: \(error)")
         }
+        #endif
     }
 
     var body: some Scene {

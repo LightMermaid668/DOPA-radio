@@ -2,6 +2,7 @@ import AVKit
 import SwiftUI
 
 /// AirPlay出力先ボタン（iOSネイティブ）
+#if os(iOS)
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
@@ -12,6 +13,41 @@ struct AirPlayButton: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+#else
+struct AirPlayButton: View {
+    var body: some View { EmptyView() }
+}
+#endif
+
+/// iOSではインライン表示、macOSでは通常タイトル
+extension View {
+    func dopaInlineTitle() -> some View {
+        #if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
+    }
+}
+
+/// iOSではナビバー左右、macOSでは navigation / primaryAction に割り当てる
+extension ToolbarItemPlacement {
+    static var dopaLeading: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
+    static var dopaTrailing: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarTrailing
+        #else
+        .primaryAction
+        #endif
+    }
 }
 
 func formatDuration(_ seconds: Int?) -> String {

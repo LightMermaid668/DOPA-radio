@@ -40,7 +40,7 @@ struct LibraryView: View {
             .background(DopaColor.background)
             .navigationTitle("ライブラリ")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .dopaLeading) {
                     Button {
                         showUpload = true
                     } label: {
@@ -48,7 +48,7 @@ struct LibraryView: View {
                     }
                     .accessibilityLabel("アップロード")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Menu {
                         Button {
                             showDownloads = true

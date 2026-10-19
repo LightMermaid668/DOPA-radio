@@ -26,3 +26,21 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+
+  ios-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: |
+          cp GoogleConfig.xcconfig.example GoogleConfig.xcconfig
+          xcodegen generate
+      - name: Build iOS (simulator)
+        working-directory: ios
+        run: xcodebuild -project DopaRadio.xcodeproj -scheme DopaRadio -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -5
+      - name: Build macOS
+        working-directory: ios
+        run: xcodebuild -project DopaRadio.xcodeproj -scheme DopaRadioMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build | tail -5

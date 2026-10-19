@@ -25,16 +25,20 @@ struct LoginView: View {
 
                     VStack(spacing: 12) {
                         TextField("メールアドレス", text: $email)
+                            #if os(iOS)
                             .textContentType(.emailAddress)
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
+                            #endif
                             .autocorrectionDisabled()
                             .padding(14)
                             .background(DopaColor.card, in: RoundedRectangle(cornerRadius: 14))
                             .overlay(RoundedRectangle(cornerRadius: 14).stroke(DopaColor.border))
 
                         SecureField("パスワード", text: $password)
+                            #if os(iOS)
                             .textContentType(.password)
+                            #endif
                             .padding(14)
                             .background(DopaColor.card, in: RoundedRectangle(cornerRadius: 14))
                             .overlay(RoundedRectangle(cornerRadius: 14).stroke(DopaColor.border))

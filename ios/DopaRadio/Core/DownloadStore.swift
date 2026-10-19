@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 /// ダウンロード済みの記録
 struct DownloadRecord: Codable, Identifiable {

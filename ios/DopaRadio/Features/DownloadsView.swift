@@ -21,9 +21,9 @@ struct DownloadsView: View {
             }
             .background(DopaColor.background)
             .navigationTitle("ダウンロード済み")
-            .navigationBarTitleDisplayMode(.inline)
+            .dopaInlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Button("閉じる") { dismiss() }
                 }
             }

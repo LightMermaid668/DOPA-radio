@@ -1,18 +1,25 @@
 import Foundation
+#if os(iOS)
 import GoogleSignIn
 import UIKit
+#endif
 
 /// Googleログイン（ネイティブSDK → Better AuthのidToken方式）
 enum GoogleSignInManager {
     /// iOSクライアントIDが設定されているか（未設定ならログイン画面にボタンを出さない）
     static var isConfigured: Bool {
+        #if os(iOS)
         guard let clientId = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String
         else { return false }
         return !clientId.isEmpty && !clientId.hasPrefix("$(")
+        #else
+        return false
+        #endif
     }
 
     @MainActor
     static func signIn() async throws -> (idToken: String, accessToken: String?) {
+        #if os(iOS)
         guard isConfigured,
             let clientId = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String
         else {
@@ -43,8 +50,12 @@ enum GoogleSignInManager {
         } catch {
             throw AuthError.failed("Googleログインがキャンセルされました")
         }
+        #else
+        throw AuthError.failed("GoogleログインはiOS版でご利用ください")
+        #endif
     }
 
+    #if os(iOS)
     private static func rootViewController() -> UIViewController? {
         guard
             let scene = UIApplication.shared.connectedScenes
@@ -53,4 +64,5 @@ enum GoogleSignInManager {
         else { return nil }
         return scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
     }
+    #endif
 }

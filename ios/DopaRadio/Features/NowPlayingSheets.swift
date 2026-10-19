@@ -47,9 +47,9 @@ struct QueueSheet: View {
             .scrollContentBackground(.hidden)
             .background(DopaColor.background)
             .navigationTitle("再生キュー")
-            .navigationBarTitleDisplayMode(.inline)
+            .dopaInlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Button("閉じる") { dismiss() }
                 }
             }
@@ -130,9 +130,9 @@ struct StudioSheet: View {
             .scrollContentBackground(.hidden)
             .background(DopaColor.background)
             .navigationTitle("スタジオ")
-            .navigationBarTitleDisplayMode(.inline)
+            .dopaInlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Button("閉じる") { dismiss() }
                 }
             }
@@ -234,9 +234,9 @@ struct SpeedPitchSheet: View {
             .scrollContentBackground(.hidden)
             .background(DopaColor.background)
             .navigationTitle("速度・ピッチ")
-            .navigationBarTitleDisplayMode(.inline)
+            .dopaInlineTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .dopaTrailing) {
                     Button("閉じる") { dismiss() }
                 }
             }

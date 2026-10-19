@@ -1,4 +1,6 @@
+#if canImport(GoogleSignIn)
 import GoogleSignIn
+#endif
 import SwiftUI
 
 struct RootView: View {
@@ -23,12 +25,15 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .onOpenURL { url in
             // Googleログインの戻り（OAuthコールバック）
+            #if canImport(GoogleSignIn)
             GIDSignIn.sharedInstance.handle(url)
+            #endif
         }
     }
 
     private var mainTabs: some View {
         Group {
+            #if os(iOS)
             if #available(iOS 26.0, *) {
                 // iOS 26+: システムのタブバーアクセサリとしてミニプレイヤーを表示。
                 // リストの下部インセットが自動調整される（Apple Music風・タブバーに吸い込まれる）
@@ -42,38 +47,56 @@ struct RootView: View {
                 }
                 .tabBarMinimizeBehavior(.onScrollDown)
             } else {
-                TabView(selection: $selectedTab) {
-                    playerTab { HomeView() }
-                        .tabItem { Label("ホーム", systemImage: "house.fill") }
-                        .tag(0)
-
-                    playerTab { DiscoverView() }
-                        .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
-                        .tag(1)
-
-                    playerTab { LibraryView() }
-                        .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
-                        .tag(2)
-
-                    playerTab { PlaylistsView() }
-                        .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
-                        .tag(3)
-
-                    playerTab { SearchView() }
-                        .tabItem { Label("検索", systemImage: "magnifyingglass") }
-                        .tag(4)
-                }
+                legacyTabs
             }
+            #else
+            legacyTabs
+            #endif
         }
         .sheet(isPresented: $showNowPlaying) {
-            NowPlayingView()
-                .environmentObject(player)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(24)
-                .presentationBackground(DopaColor.background)
+            nowPlayingSheet
         }
         .tint(DopaColor.accent)
+    }
+
+    private var legacyTabs: some View {
+        TabView(selection: $selectedTab) {
+            playerTab { HomeView() }
+                .tabItem { Label("ホーム", systemImage: "house.fill") }
+                .tag(0)
+
+            playerTab { DiscoverView() }
+                .tabItem { Label("ディスカバー", systemImage: "safari.fill") }
+                .tag(1)
+
+            playerTab { LibraryView() }
+                .tabItem { Label("ライブラリ", systemImage: "music.note.list") }
+                .tag(2)
+
+            playerTab { PlaylistsView() }
+                .tabItem { Label("プレイリスト", systemImage: "list.bullet.rectangle") }
+                .tag(3)
+
+            playerTab { SearchView() }
+                .tabItem { Label("検索", systemImage: "magnifyingglass") }
+                .tag(4)
+        }
+    }
+
+    @ViewBuilder
+    private var nowPlayingSheet: some View {
+        #if os(iOS)
+        NowPlayingView()
+            .environmentObject(player)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
+            .presentationBackground(DopaColor.background)
+        #else
+        NowPlayingView()
+            .environmentObject(player)
+            .frame(minWidth: 420, idealWidth: 480, minHeight: 620, idealHeight: 720)
+        #endif
     }
 
     @ViewBuilder
