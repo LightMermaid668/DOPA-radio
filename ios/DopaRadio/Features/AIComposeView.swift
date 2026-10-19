@@ -25,11 +25,19 @@ struct AIComposeView: View {
     @State private var errorText: String?
     @State private var diskFree: Int64?
     @State private var durations: [String: Double] = [:]
+    @State private var dopaTarget: DopaTarget?
+    @State private var remixSource: URL?
+    @State private var remixNoise: Double = 0.7
 
     struct GeneratedFile: Identifiable {
         let url: URL
         var id: String { url.path }
         var title: String { url.deletingPathExtension().lastPathComponent }
+    }
+
+    struct DopaTarget: Identifiable {
+        let url: URL
+        var id: String { url.path }
     }
 
     struct Preset {
@@ -42,43 +50,43 @@ struct AIComposeView: View {
 
     private let presets: [Preset] = [
         Preset(
-            label: "ドパトランス",
+            label: "ノリノリリミックス",
             prompt:
-                "high-energy Japanese EDM trance at 175 BPM, relentless four-on-the-floor kick, hard pumping sidechain bass, massive supersaw chords, euphoric lead melody, snare roll build-up, white noise riser, explosive festival drop, loud punchy compressed mix, nonstop adrenaline, instrumental",
+                "Norinoricore remix, 175 BPM, J-Core, Eurobeat, Happy Hardcore, Hyperpop, heavy four-on-the-floor kick, fast tempo, high energy, pounding sidechain bass, supersaw chords, euphoric lead melody, snare roll build, explosive drop, extremely dense loud mix, instrumental",
             negative: "vocals, singing, slow, calm, ambient, quiet, sparse, lo-fi",
+            cfg: 4.5,
+            seconds: 120
+        ),
+        Preset(
+            label: "ユーロビート",
+            prompt:
+                "Eurobeat at 165 BPM, high-energy four-on-the-floor kick, rolling octave bass, bright supersaw stabs, catchy lead hook, snare fills, racing adrenaline feel, loud punchy mix, instrumental",
+            negative: "vocals, slow, calm, ambient, quiet, sparse",
             cfg: 4.0,
             seconds: 120
         ),
         Preset(
-            label: "メガサビ",
+            label: "ハピハピ",
             prompt:
-                "massive J-EDM anthem at 170 BPM, gigantic supersaw chorus hook repeating, hard kick and clap, offbeat bass pump, dramatic build-up with risers and snare rolls, huge explosive drop, main stage festival energy, bright and loud, instrumental",
-            negative: "vocals, singing, slow, calm, ambient, quiet, sparse",
+                "Happy Hardcore at 180 BPM, bouncy four-on-the-floor kick, euphoric piano and supersaw leads, hoover bass, uplifting happy melody, high energy festival drop, dense and loud, instrumental",
+            negative: "vocals, slow, calm, ambient, quiet, dark",
             cfg: 4.0,
             seconds: 120
         ),
         Preset(
-            label: "限界ドパ",
+            label: "J-Core",
             prompt:
-                "maximum dopamine hyper EDM at 190 BPM, frenetic nonstop energy, hardstyle-influenced festival drop, distorted hard bass, rapid arpeggios, intense snare rolls, chaotic euphoric hook every few seconds, extremely dense loud mix, instrumental",
-            negative: "vocals, calm, slow, ambient, minimal, quiet, sparse",
+                "J-Core at 190 BPM, frantic hyper energy, hard kick, distorted bass, rapid arpeggios, chaotic euphoric hook, intense snare rolls, maximum density, instrumental",
+            negative: "vocals, calm, slow, ambient, minimal, quiet",
             cfg: 4.5,
             seconds: 90
         ),
         Preset(
             label: "キラキラ",
             prompt:
-                "kawaii future bass at 155 BPM, sparkling detuned synths, cute plucky lead melody, big sidechained chords, punchy kick and claps, energetic glittering drop, bright euphoric hyper vibe, instrumental",
+                "kawaii Hyperpop future bass at 160 BPM, sparkling detuned synths, cute plucky lead, big sidechained chords, punchy kick, glittering energetic drop, bright euphoric vibe, instrumental",
             negative: "vocals, slow, dark, ambient, quiet",
             cfg: 3.5,
-            seconds: 90
-        ),
-        Preset(
-            label: "チルドパ",
-            prompt:
-                "chill dopamine groove at 125 BPM, warm deep sub bass, relaxed but bouncy beat, smooth jazzy chords, lo-fi synth textures, head-nodding groove, instrumental",
-            negative: "vocals, aggressive, harsh, distorted",
-            cfg: 3.0,
             seconds: 90
         ),
     ]
@@ -106,6 +114,12 @@ struct AIComposeView: View {
         }
         .background(DopaColor.background)
         .navigationTitle("AI作曲")
+        .sheet(item: $dopaTarget) { target in
+            DopaDopeSheet(sourceURL: target.url) { url in
+                refreshGenerated()
+                play(url)
+            }
+        }
         .onAppear {
             manager.refresh()
             diskFree = StableAudioManager.availableDiskSpace()
@@ -267,6 +281,7 @@ struct AIComposeView: View {
     private var composeUI: some View {
         VStack(alignment: .leading, spacing: 16) {
             modelRow
+            remixCard
             promptCard
             settingsCard
             generateRow
@@ -276,6 +291,80 @@ struct AIComposeView: View {
                 resultCard(lastResult)
             }
             generatedList
+        }
+    }
+
+    /// ノリノリリミックス: 手持ちの原曲をSA3のaudio-to-audioに通す
+    private var remixCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(DopaColor.accent)
+                Text("ノリノリリミックス（原曲から作る）")
+                    .font(.headline)
+            }
+            Text("原曲の音源を選ぶと、メロディや雰囲気を残したままAIがノリノリなダンス曲に作り直します。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Button {
+                    chooseRemixSource()
+                } label: {
+                    Label(
+                        remixSource == nil ? "原曲を選ぶ" : "原曲を変更",
+                        systemImage: "waveform.badge.plus"
+                    )
+                }
+                .buttonStyle(.bordered)
+
+                if let remixSource {
+                    Text(remixSource.deletingPathExtension().lastPathComponent)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        self.remixSource = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .help("リミックスを解除")
+                }
+            }
+
+            if remixSource != nil {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text("原曲の残し具合")
+                        Spacer()
+                        Text(remixNoise < 0.55 ? "ほぼ原曲" : remixNoise < 0.75 ? "バランス" : "大きく作り直す")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $remixNoise, in: 0.4...0.95, step: 0.05)
+                        .tint(DopaColor.accent)
+                }
+            }
+        }
+        .padding(16)
+        .background(DopaColor.card, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(remixSource == nil ? DopaColor.border : DopaColor.accent.opacity(0.6))
+        )
+    }
+
+    private func chooseRemixSource() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            remixSource = url
+            if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                applyPreset(presets[0])
+            }
         }
     }
 
@@ -492,6 +581,14 @@ struct AIComposeView: View {
                 .tint(DopaColor.accent)
                 .foregroundStyle(.black)
                 .disabled(upload.isBusy)
+
+                Button {
+                    dopaTarget = DopaTarget(url: url)
+                } label: {
+                    Label("ノリノリ加工", systemImage: "wand.and.stars")
+                }
+                .buttonStyle(.bordered)
+                .disabled(manager.isGenerating)
             }
         }
         .padding(16)
@@ -532,6 +629,14 @@ struct AIComposeView: View {
                         .help("再生")
 
                         Button {
+                            dopaTarget = DopaTarget(url: item.url)
+                        } label: {
+                            Image(systemName: "wand.and.stars")
+                        }
+                        .buttonStyle(.plain)
+                        .help("ノリノリ加工")
+
+                        Button {
                             Task { await uploadTrack(item.url) }
                         } label: {
                             Image(systemName: "arrow.up.circle")
@@ -566,6 +671,14 @@ struct AIComposeView: View {
     }
 
     private func generate() {
+        let isRemix = remixSource != nil
+        let baseTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let autoTitle: String
+        if isRemix, let remixSource {
+            autoTitle = "\(remixSource.deletingPathExtension().lastPathComponent) ノリノリリミックス"
+        } else {
+            autoTitle = baseTitle
+        }
         let request = StableAudioManager.GenerationRequest(
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
             negativePrompt: negativePrompt,
@@ -574,7 +687,9 @@ struct AIComposeView: View {
             steps: Int(steps),
             cfg: cfg,
             seed: randomSeed ? nil : Int(seedText),
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines)
+            title: autoTitle,
+            initAudioURL: remixSource,
+            initNoiseLevel: remixNoise
         )
         errorText = nil
         upload.reset()
@@ -628,7 +743,8 @@ struct AIComposeView: View {
         upload.reset()
         upload.importFile(url)
         upload.rightsConfirmed = true
-        upload.visibility = "public"
+        // ノリノリリミックスは元曲の権利に配慮して限定公開を既定にする
+        upload.visibility = url.lastPathComponent.contains("ノリノリリミックス") ? "unlisted" : "public"
         await upload.upload()
     }
 
@@ -640,7 +756,7 @@ struct AIComposeView: View {
                 at: directory, includingPropertiesForKeys: keys
             )) ?? []
         generated = items
-            .filter { $0.pathExtension.lowercased() == "wav" }
+            .filter { ["wav", "m4a"].contains($0.pathExtension.lowercased()) }
             .map { GeneratedFile(url: $0) }
             .sorted { $0.url.lastPathComponent > $1.url.lastPathComponent }
         loadDurations()

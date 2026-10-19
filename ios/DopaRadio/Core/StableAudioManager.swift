@@ -1,4 +1,5 @@
 #if os(macOS)
+import AVFoundation
 import Foundation
 
 /// Stable Audio 3.0（MLX）の導入・生成を管理する（Mac限定・完全ローカル）
@@ -68,6 +69,10 @@ final class StableAudioManager: ObservableObject {
         var cfg: Double = 1.0
         var seed: Int?
         var title: String = ""
+        /// 原曲（ノリノリリミックス用）。指定すると audio-to-audio になる
+        var initAudioURL: URL?
+        /// 原曲をどれだけ残すか（0.4=ほぼ原曲 / 0.8=大きく作り直す）
+        var initNoiseLevel: Double = 0.7
     }
 
     // MARK: - 定数
@@ -387,6 +392,79 @@ final class StableAudioManager: ObservableObject {
 
     // MARK: - 生成
 
+    /// SA3は 44.1kHz/16bit PCM WAV のみ受け付けるため、指定秒数へ切り出して変換する
+    private func prepareInitAudio(_ url: URL, seconds: Int) throws -> URL {
+        let asset = AVURLAsset(url: url)
+        guard let track = asset.tracks(withMediaType: .audio).first else {
+            throw StableAudioError.setupFailed("原曲に音声が含まれていません")
+        }
+        let reader = try AVAssetReader(asset: asset)
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsNonInterleaved: false,
+            AVNumberOfChannelsKey: 2,
+            AVSampleRateKey: 44_100,
+        ]
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else {
+            throw StableAudioError.setupFailed("原曲を読み込めませんでした")
+        }
+        reader.add(output)
+        reader.timeRange = CMTimeRange(
+            start: .zero,
+            duration: CMTime(seconds: Double(seconds), preferredTimescale: 600)
+        )
+        guard reader.startReading() else {
+            throw StableAudioError.setupFailed("原曲の読み込みに失敗しました")
+        }
+
+        let destination = Self.outputDirectory.appendingPathComponent(
+            "init-\(UUID().uuidString).wav"
+        )
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatInt16, sampleRate: 44_100, channels: 2, interleaved: true
+        )!
+        let file = try AVAudioFile(forWriting: destination, settings: format.settings)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_384)!
+
+        while let sampleBuffer = output.copyNextSampleBuffer() {
+            defer { CMSampleBufferInvalidate(sampleBuffer) }
+            guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
+            let length = CMBlockBufferGetDataLength(block)
+            guard length > 0 else { continue }
+            var data = Data(count: length)
+            data.withUnsafeMutableBytes { raw in
+                guard let base = raw.baseAddress else { return }
+                _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: base)
+            }
+            let frameCount = length / 4
+            var offset = 0
+            while offset < frameCount {
+                let count = min(16_384, frameCount - offset)
+                buffer.frameLength = AVAudioFrameCount(count)
+                if let channels = buffer.int16ChannelData {
+                    data.withUnsafeBytes { raw in
+                        guard let base = raw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+                        for index in 0..<count {
+                            channels[0][index] = base[(offset + index) * 2]
+                            channels[1][index] = base[(offset + index) * 2 + 1]
+                        }
+                    }
+                }
+                try file.write(from: buffer)
+                offset += count
+            }
+        }
+        reader.cancelReading()
+        guard file.length > 0 else {
+            throw StableAudioError.setupFailed("原曲の変換に失敗しました")
+        }
+        return destination
+    }
+
     func generate(_ request: GenerationRequest) async throws -> URL {
         guard phase == .ready else { throw StableAudioError.notInstalled }
         guard !isGenerating else { throw StableAudioError.busy }
@@ -421,6 +499,13 @@ final class StableAudioManager: ObservableObject {
         }
         if let seed = request.seed {
             arguments += ["--seed", String(seed)]
+        }
+        if let initAudio = request.initAudioURL {
+            let wav = try prepareInitAudio(initAudio, seconds: request.seconds)
+            arguments += [
+                "--init-audio", wav.path,
+                "--init-noise-level", String(request.initNoiseLevel),
+            ]
         }
 
         appendLog("生成開始: \(request.bundle.rawValue) / \(request.seconds)秒 / \(request.steps)ステップ")

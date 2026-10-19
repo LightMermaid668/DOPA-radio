@@ -146,6 +146,16 @@ enum TempoAnalyzer {
                 refinedLag = Double(bestLag) + Double(max(-0.5, min(0.5, delta)))
             }
         }
-        return 60.0 / (refinedLag * hopSec)
+        let rawBPM = 60.0 / (refinedLag * hopSec)
+
+        // オクターブ補正: 自己相関は2拍周期でも強く出るため、
+        // ドパ系で一般的な100〜200BPMに収まるよう補正する
+        if rawBPM < 100, rawBPM * 2 <= 200 {
+            return rawBPM * 2
+        }
+        if rawBPM > 200 {
+            return rawBPM / 2
+        }
+        return rawBPM
     }
 }
