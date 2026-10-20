@@ -9,11 +9,12 @@ struct AIComposeView: View {
     @ObservedObject private var manager = StableAudioManager.shared
     @StateObject private var upload = UploadManager()
 
-    @State private var prompt = ""
+    @State private var prompt =
+        "DOPADOPA-style Japanese dance remix at 156 BPM, minor key. Evolving arrangement with clear structure: filtered intro, relentless four-on-the-floor kick, rolling offbeat bassline, driving 16th-note arpeggios, bright supersaw chords. Tension and release: white-noise risers, snare roll build-ups, explosive drops every 16 bars, filtered breakdown, second drop with an added lead layer. Catchy vocal chops, dense but dynamic mix, loud punchy master, nonstop drive, constantly evolving hooks, instrumental"
     @State private var negativePrompt = ""
     @State private var bundle: StableAudioManager.ModelBundle = .smallMusic
     @State private var seconds: Double = 60
-    @State private var steps: Double = 8
+    @State private var steps: Double = 10
     @State private var cfg: Double = 2.6
     @State private var randomSeed = true
     @State private var seedText = ""
@@ -31,6 +32,8 @@ struct AIComposeView: View {
     @State private var references: [ReferenceAnalyzer.Report] = []
     @State private var isAnalyzingReferences = false
     @State private var referenceError: String?
+    @State private var referenceWithVocals = false
+    @State private var referenceAnalysisNote = ""
 
     struct GeneratedFile: Identifiable {
         let url: URL
@@ -53,10 +56,18 @@ struct AIComposeView: View {
 
     private let presets: [Preset] = [
         Preset(
-            label: "ノリノリリミックス",
+            label: "DOPADOPA風",
+            prompt:
+                "DOPADOPA-style Japanese dance remix at 156 BPM, minor key. Evolving arrangement with clear structure: filtered intro, relentless four-on-the-floor kick, rolling offbeat bassline, driving 16th-note arpeggios, bright supersaw chords. Tension and release: white-noise risers, snare roll build-ups, explosive drops every 16 bars, filtered breakdown, second drop with an added lead layer. Catchy vocal chops, dense but dynamic mix, loud punchy master, nonstop drive, constantly evolving hooks, instrumental",
+            negative: "repetitive, monotonous, static loop, flat dynamics, no variation, slow, calm, ambient, quiet, sparse, lo-fi",
+            cfg: 2.6,
+            seconds: 120
+        ),
+        Preset(
+            label: "J-Core MAX",
             prompt:
                 "Norinoricore remix, 175 BPM, J-Core, Eurobeat, Happy Hardcore, Hyperpop, heavy four-on-the-floor kick, fast tempo, high energy, pounding sidechain bass, supersaw chords, euphoric lead melody, snare roll build, explosive drop, extremely dense loud mix, instrumental",
-            negative: "vocals, singing, slow, calm, ambient, quiet, sparse, lo-fi",
+            negative: "repetitive, monotonous, static, slow, calm, ambient, quiet, sparse, lo-fi",
             cfg: 2.8,
             seconds: 120
         ),
@@ -64,7 +75,7 @@ struct AIComposeView: View {
             label: "ユーロビート",
             prompt:
                 "Eurobeat at 165 BPM, high-energy four-on-the-floor kick, rolling octave bass, bright supersaw stabs, catchy lead hook, snare fills, racing adrenaline feel, loud punchy mix, instrumental",
-            negative: "vocals, slow, calm, ambient, quiet, sparse",
+            negative: "repetitive, monotonous, static, slow, calm, ambient, quiet, sparse",
             cfg: 2.6,
             seconds: 120
         ),
@@ -316,10 +327,20 @@ struct AIComposeView: View {
                         .buttonStyle(.bordered)
                         .disabled(isAnalyzingReferences)
 
+                        if FileManager.default.fileExists(atPath: Self.dopaFolder.path) {
+                            Button {
+                                analyzeDopaFolder()
+                            } label: {
+                                Label("DOPADOPAフォルダを分析", systemImage: "folder")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isAnalyzingReferences)
+                        }
+
                         if isAnalyzingReferences {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("解析中…")
+                            Text(referenceAnalysisNote.isEmpty ? "解析中…" : referenceAnalysisNote)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else if !references.isEmpty {
@@ -329,6 +350,10 @@ struct AIComposeView: View {
                             .font(.caption)
                         }
                     }
+
+                    Toggle("ボーカル入りで生成", isOn: $referenceWithVocals)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
 
                     if let referenceError {
                         Text(referenceError)
@@ -353,7 +378,9 @@ struct AIComposeView: View {
                                 }
                             }
                             Divider()
-                            if let suggestion = ReferenceAnalyzer.suggestion(from: references) {
+                            if let suggestion = ReferenceAnalyzer.suggestion(
+                                from: references, withVocals: referenceWithVocals
+                            ) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("提案: \(suggestion.bpm) BPM")
@@ -392,21 +419,44 @@ struct AIComposeView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(DopaColor.border))
     }
 
+    static var dopaFolder: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("dopadopa", isDirectory: true)
+    }
+
+    private func analyzeDopaFolder() {
+        let folder = Self.dopaFolder
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil
+        )) ?? [])
+        .filter { ["m4a", "wav", "mp3"].contains($0.pathExtension.lowercased()) }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !files.isEmpty else {
+            referenceError = "DOPADOPAフォルダに音源がありません"
+            return
+        }
+        analyzeReferences(files)
+    }
+
     private func chooseReferenceFiles() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audio]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        let urls = panel.urls
-        guard !urls.isEmpty else { return }
+        analyzeReferences(panel.urls)
+    }
 
+    private func analyzeReferences(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
         isAnalyzingReferences = true
         referenceError = nil
+        referenceAnalysisNote = "解析中… 0/\(urls.count)"
         Task {
             var reports: [ReferenceAnalyzer.Report] = []
             var failures: [String] = []
-            for url in urls {
+            for (index, url) in urls.enumerated() {
+                referenceAnalysisNote = "解析中… \(index + 1)/\(urls.count)"
                 do {
                     reports.append(try await Task.detached(priority: .userInitiated) {
                         try ReferenceAnalyzer.analyze(url: url)
@@ -417,8 +467,9 @@ struct AIComposeView: View {
             }
             references = reports
             if !failures.isEmpty {
-                referenceError = "解析できませんでした: \(failures.joined(separator: ", "))"
+                referenceError = "解析できませんでした: \(failures.prefix(3).joined(separator: ", "))\(failures.count > 3 ? " 他" : "")"
             }
+            referenceAnalysisNote = ""
             isAnalyzingReferences = false
         }
     }

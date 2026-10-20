@@ -215,7 +215,7 @@ enum ReferenceAnalyzer {
         let bpm: Int
     }
 
-    static func suggestion(from reports: [Report]) -> Suggestion? {
+    static func suggestion(from reports: [Report], withVocals: Bool = false) -> Suggestion? {
         guard !reports.isEmpty else { return nil }
         let bpms = reports.compactMap(\.bpm).sorted()
         let bpm = bpms.isEmpty ? 170 : Int(bpms[bpms.count / 2].rounded())
@@ -224,11 +224,13 @@ enum ReferenceAnalyzer {
         let onsets = reports.map(\.onsetsPerSecond).reduce(0, +) / Double(reports.count)
         let centroid = reports.map(\.centroidHz).reduce(0, +) / Double(reports.count)
 
-        var tags = ["\(bpm) BPM", "high energy", "Norinoricore remix"]
+        var tags = [
+            "\(bpm) BPM", "DOPADOPA-style Japanese dance remix", "high energy",
+        ]
         if offbeat > 0.45 {
             tags += ["heavy four-on-the-floor kick", "offbeat pumping bass"]
         }
-        if sub > 0.08 {
+        if sub > 0.05 {
             tags += ["deep sub bass", "hard kick", "punchy low end"]
         }
         if onsets > 12 {
@@ -237,7 +239,10 @@ enum ReferenceAnalyzer {
         if centroid > 2_400 {
             tags += ["bright supersaw synths", "sparkling leads"]
         }
-        tags += ["loud compressed mix", "instrumental"]
+        tags += ["loud compressed mix"]
+        tags += withVocals
+            ? ["Japanese pop female vocal chops", "vocal remix"]
+            : ["instrumental"]
         return Suggestion(prompt: tags.joined(separator: ", "), bpm: bpm)
     }
 

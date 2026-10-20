@@ -86,7 +86,9 @@ enum DopaDoper {
             bpm: targetBPM,
             startOffset: offset,
             keyRoot: key?.root,
-            options: options
+            options: options,
+            bedLeft: left,
+            bedRight: right
         )
 
         if options.addPump {
@@ -413,48 +415,114 @@ enum DopaDoper {
         bpm: Double,
         startOffset: Double,
         keyRoot: Int?,
-        options: Options
+        options: Options,
+        bedLeft: [Float],
+        bedRight: [Float]
     ) -> (left: [Float], right: [Float]) {
         var layerLeft = [Float](repeating: 0, count: totalFrames)
         var layerRight = [Float](repeating: 0, count: totalFrames)
 
         let beat = 60.0 / bpm
         let step = beat / 4
+        let barDuration = beat * 4
         let totalSeconds = Double(totalFrames) / sampleRate
+        let barCount = max(1, Int(ceil(totalSeconds / barDuration)) + 1)
         let bassRootMidi = 36 + (keyRoot ?? 9)
+
+        // 原曲の小節ごとのエネルギーから「サビ/静かな部分」を推定して展開を作る
+        var energies = [Float](repeating: 0, count: barCount)
+        for bar in 0..<barCount {
+            let start = Int((startOffset + Double(bar) * barDuration) * sampleRate)
+            let count = min(Int(barDuration * sampleRate), min(bedLeft.count, bedRight.count) - start)
+            guard start >= 0, count > 0 else { continue }
+            var sum: Double = 0
+            for index in 0..<count {
+                let l = Double(bedLeft[start + index])
+                let r = Double(bedRight[start + index])
+                sum += l * l + r * r
+            }
+            energies[bar] = Float(sqrt(sum / Double(count * 2)))
+        }
+        let sorted = energies.sorted()
+        let median = sorted[sorted.count / 2]
+        let highThreshold = max(median * 0.95, 0.001)
+        var previousHigh = false
 
         var stepIndex = 0
         var time = startOffset
         while time < totalSeconds + beat {
             let inBar = stepIndex % 16
-            switch inBar {
-            case 0, 4, 8, 12:
-                addKick(&layerLeft, &layerRight, at: time, gain: 0.95 * options.drumLevel)
-            case 4, 12:
-                addClap(&layerLeft, &layerRight, at: time, gain: 0.5 * options.drumLevel)
-            case 2, 6, 10, 14:
-                addHat(&layerLeft, &layerRight, at: time, gain: 0.3 * options.drumLevel, open: true)
-            case 7, 15:
-                addHat(&layerLeft, &layerRight, at: time, gain: 0.12 * options.drumLevel, open: false)
-            default:
-                break
+            let barIndex = min(stepIndex / 16, barCount - 1)
+            let isHigh = energies[barIndex] >= highThreshold
+            let barStart = startOffset + Double(barIndex) * barDuration
+
+            // セクション変化点: 静→盛り上がりの頭にクラッシュとライザー
+            if inBar == 0 {
+                if isHigh && !previousHigh {
+                    addCrash(&layerLeft, &layerRight, at: time, gain: 0.5 * options.drumLevel)
+                    if barIndex > 0 {
+                        addRiser(
+                            &layerLeft, &layerRight,
+                            at: barStart - barDuration, duration: barDuration,
+                            gain: 0.22 * options.drumLevel
+                        )
+                    }
+                }
+                if barIndex == 0 {
+                    addCrash(&layerLeft, &layerRight, at: time, gain: 0.6 * options.drumLevel)
+                }
+                previousHigh = isHigh
             }
+
+            // キックは常に4つ打ち（推進力の核）
+            if inBar % 4 == 0 {
+                addKick(&layerLeft, &layerRight, at: time, gain: 0.95 * options.drumLevel)
+            }
+            // クラップ（2・4拍）
+            if inBar == 4 || inBar == 12 {
+                addClap(&layerLeft, &layerRight, at: time, gain: 0.5 * options.drumLevel)
+            }
+            // オープンハットは盛り上がり区間だけ
+            if isHigh, inBar == 2 || inBar == 6 || inBar == 10 || inBar == 14 {
+                addHat(&layerLeft, &layerRight, at: time, gain: 0.3 * options.drumLevel, open: true)
+            }
+            // クローズドハットで16分の密度を出す
+            if isHigh {
+                if inBar % 2 == 0 {
+                    addHat(&layerLeft, &layerRight, at: time, gain: 0.1 * options.drumLevel, open: false)
+                }
+            } else if inBar == 7 || inBar == 15 {
+                addHat(&layerLeft, &layerRight, at: time, gain: 0.1 * options.drumLevel, open: false)
+            }
+
+            // ベース: オフビート8分。4小節ごとにオクターブ、奇数小節の終わりに5度で跳ねる
             if options.addBass, keyRoot != nil {
+                let octave = barIndex % 4 == 3 ? 12 : 0
                 switch inBar {
                 case 2, 6, 10, 14:
                     addBass(
                         &layerLeft, &layerRight, at: time, duration: step * 1.7,
-                        midi: bassRootMidi, gain: 0.8 * options.bassLevel
+                        midi: bassRootMidi + octave, gain: 0.8 * options.bassLevel
                     )
-                case 15:
+                case 7, 15:
                     addBass(
                         &layerLeft, &layerRight, at: time, duration: step * 0.8,
-                        midi: bassRootMidi, gain: 0.5 * options.bassLevel
+                        midi: bassRootMidi + (inBar == 15 ? 7 : 0), gain: 0.5 * options.bassLevel
                     )
                 default:
                     break
                 }
             }
+
+            // 8小節ごとのフィル（16分クラップ連打）
+            if barIndex % 8 == 7, inBar >= 12 {
+                let ramp = Float(inBar - 11) / 4
+                addClap(
+                    &layerLeft, &layerRight, at: time,
+                    gain: (0.18 + 0.3 * ramp) * options.drumLevel
+                )
+            }
+
             time += step
             stepIndex += 1
         }
@@ -548,6 +616,41 @@ enum DopaDoper {
             previous = white
             let out = Float(high * envelope * Double(gain) * 0.35)
             write(&left, &right, at: time + t, out * 0.85, out)
+        }
+    }
+
+    private static func addCrash(
+        _ left: inout [Float], _ right: inout [Float], at time: Double, gain: Float
+    ) {
+        let count = Int(1.1 * sampleRate)
+        var previous = 0.0
+        for index in 0..<count {
+            let t = Double(index) / sampleRate
+            let envelope = exp(-t / 0.35)
+            let white = Double.random(in: -1...1)
+            let high = white - previous
+            previous = white
+            let out = Float(high * envelope * Double(gain) * 0.35)
+            write(&left, &right, at: time + t, out * 0.9, out)
+        }
+    }
+
+    private static func addRiser(
+        _ left: inout [Float], _ right: inout [Float],
+        at time: Double, duration: Double, gain: Float
+    ) {
+        let count = Int(duration * sampleRate)
+        guard count > 0 else { return }
+        var lowpass = 0.0
+        for index in 0..<count {
+            let t = Double(index) / sampleRate
+            let progress = t / duration
+            let white = Double.random(in: -1...1)
+            let coefficient = 0.004 + 0.16 * progress * progress
+            lowpass += coefficient * (white - lowpass)
+            let envelope = progress * progress
+            let out = Float(lowpass * envelope * Double(gain) * 0.6)
+            write(&left, &right, at: time + t, out, out)
         }
     }
 
