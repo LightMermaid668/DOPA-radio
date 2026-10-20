@@ -102,7 +102,7 @@ enum DopaDoper {
         progress?("書き出し中…")
         let base = sourceURL.deletingPathExtension().lastPathComponent
         let outputURL = outputDirectory.appendingPathComponent(
-            "\(sanitize(base)) ドパドパ.m4a"
+            "\(sanitize(base)) ノリノリ加工.m4a"
         )
         try write(left: left, right: right, to: outputURL)
 

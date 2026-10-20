@@ -878,7 +878,7 @@ struct AIComposeView: View {
         upload.importFile(url)
         upload.rightsConfirmed = true
         // ノリノリリミックスは元曲の権利に配慮して限定公開を既定にする
-        upload.visibility = url.lastPathComponent.contains("ノリノリリミックス") ? "unlisted" : "public"
+        upload.visibility = url.lastPathComponent.contains("ノリノリ") ? "unlisted" : "public"
         await upload.upload()
     }
 
