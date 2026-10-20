@@ -28,6 +28,9 @@ struct AIComposeView: View {
     @State private var dopaTarget: DopaTarget?
     @State private var remixSource: URL?
     @State private var remixNoise: Double = 0.7
+    @State private var references: [ReferenceAnalyzer.Report] = []
+    @State private var isAnalyzingReferences = false
+    @State private var referenceError: String?
 
     struct GeneratedFile: Identifiable {
         let url: URL
@@ -281,6 +284,7 @@ struct AIComposeView: View {
     private var composeUI: some View {
         VStack(alignment: .leading, spacing: 16) {
             modelRow
+            referenceCard
             remixCard
             promptCard
             settingsCard
@@ -291,6 +295,131 @@ struct AIComposeView: View {
                 resultCard(lastResult)
             }
             generatedList
+        }
+    }
+
+    /// 参考曲の数値分析 → プロンプト/BPMへ反映
+    private var referenceCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("手持ちの「ノリノリな曲」を読み込むと、BPM・裏拍の強さ・低音の量・密度・キーを数値化し、生成プロンプトへ反映します。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            chooseReferenceFiles()
+                        } label: {
+                            Label("参考曲を選ぶ", systemImage: "waveform.path.ecg")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isAnalyzingReferences)
+
+                        if isAnalyzingReferences {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("解析中…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else if !references.isEmpty {
+                            Button("クリア") {
+                                references = []
+                            }
+                            .font(.caption)
+                        }
+                    }
+
+                    if let referenceError {
+                        Text(referenceError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    if !references.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(references) { report in
+                                HStack(spacing: 8) {
+                                    Text(report.fileName)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(
+                                        "\(report.bpm.map { "\(Int($0.rounded()))BPM" } ?? "-") ・ キー \(report.keyName ?? "-") ・ ノリノリ度 \(report.score)"
+                                    )
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                                }
+                            }
+                            Divider()
+                            if let suggestion = ReferenceAnalyzer.suggestion(from: references) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("提案: \(suggestion.bpm) BPM")
+                                            .font(.caption.weight(.semibold))
+                                        Text(suggestion.prompt)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer()
+                                    Button("この設定を反映") {
+                                        prompt = suggestion.prompt
+                                        negativePrompt = "vocals, singing, slow, calm, ambient, quiet"
+                                        cfg = 2.6
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(DopaColor.accent)
+                                    .foregroundStyle(.black)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform.path.ecg")
+                        .foregroundStyle(DopaColor.accent)
+                    Text("リファレンス分析")
+                        .font(.headline)
+                }
+            }
+        }
+        .padding(16)
+        .background(DopaColor.card, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(DopaColor.border))
+    }
+
+    private func chooseReferenceFiles() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        guard !urls.isEmpty else { return }
+
+        isAnalyzingReferences = true
+        referenceError = nil
+        Task {
+            var reports: [ReferenceAnalyzer.Report] = []
+            var failures: [String] = []
+            for url in urls {
+                do {
+                    reports.append(try await Task.detached(priority: .userInitiated) {
+                        try ReferenceAnalyzer.analyze(url: url)
+                    }.value)
+                } catch {
+                    failures.append(url.lastPathComponent)
+                }
+            }
+            references = reports
+            if !failures.isEmpty {
+                referenceError = "解析できませんでした: \(failures.joined(separator: ", "))"
+            }
+            isAnalyzingReferences = false
         }
     }
 

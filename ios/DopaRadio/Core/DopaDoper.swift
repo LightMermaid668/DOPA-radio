@@ -117,7 +117,7 @@ enum DopaDoper {
 
     // MARK: - 読み込み
 
-    private static func load(url: URL) throws -> (left: [Float], right: [Float]) {
+    static func load(url: URL) throws -> (left: [Float], right: [Float]) {
         let file: AVAudioFile
         do {
             file = try AVAudioFile(forReading: url)
@@ -187,7 +187,7 @@ enum DopaDoper {
         return TempoAnalyzer.estimateBPM(samples: mono, sampleRate: sampleRate)
     }
 
-    private static func detectKey(left: [Float], right: [Float]) -> (root: Int, minor: Bool)? {
+    static func detectKey(left: [Float], right: [Float]) -> (root: Int, minor: Bool)? {
         let fftSize = 4096
         let log2n = vDSP_Length(log2(Double(fftSize)))
         guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else { return nil }
@@ -267,7 +267,7 @@ enum DopaDoper {
     }
 
     /// ビートの位相（最初のキック位置の秒）
-    private static func beatOffset(left: [Float], right: [Float], bpm: Double) -> Double {
+    static func beatOffset(left: [Float], right: [Float], bpm: Double) -> Double {
         let hop = 256
         let frameCount = min(left.count, right.count) / hop
         guard frameCount > 8 else { return 0 }
@@ -634,7 +634,7 @@ enum DopaDoper {
         }
     }
 
-    private static func noteName(_ pitchClass: Int) -> String {
+    static func noteName(_ pitchClass: Int) -> String {
         let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         return names[((pitchClass % 12) + 12) % 12]
     }
