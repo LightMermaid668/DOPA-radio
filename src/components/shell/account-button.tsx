@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronRight,
   Download,
@@ -94,9 +95,14 @@ function Avatar({
 
 export function AccountButton({ user }: { user: ShellUser | null }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [desktopApp, setDesktopApp] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     setDesktopApp(isDesktopApp());
@@ -209,17 +215,25 @@ export function AccountButton({ user }: { user: ShellUser | null }) {
 
       {open ? (
         <>
-          <div
-            className="animate-fade fixed inset-0 z-[70] bg-black/50 md:bg-black/20"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div
-            className="animate-slide-up fixed inset-x-2 z-[80] rounded-2xl border border-dopa-700 bg-dopa-900/95 p-2 shadow-2xl backdrop-blur md:hidden"
-            style={{ bottom: "calc(var(--dopa-tabbar-offset, 0px) + 0.5rem)" }}
-          >
-            {menuContent}
-          </div>
+          {/* モバイル: ヘッダーのbackdrop-blurがfixedの基準になる問題を避けるためbodyへポータル */}
+          {mounted
+            ? createPortal(
+                <div className="md:hidden">
+                  <div
+                    className="animate-fade fixed inset-0 z-[70] bg-black/50"
+                    onClick={() => setOpen(false)}
+                    aria-hidden
+                  />
+                  <div
+                    className="animate-slide-up fixed inset-x-2 z-[80] max-h-[75dvh] overflow-y-auto overscroll-contain rounded-2xl border border-dopa-700 bg-dopa-900/95 p-2 shadow-2xl backdrop-blur"
+                    style={{ bottom: "calc(var(--dopa-tabbar-offset, 0px) + 0.5rem)" }}
+                  >
+                    {menuContent}
+                  </div>
+                </div>,
+                document.body,
+              )
+            : null}
           <div className="animate-pop absolute top-full right-0 z-[80] mt-2 hidden w-72 rounded-2xl border border-dopa-700 bg-dopa-900/95 p-2 shadow-2xl backdrop-blur md:block">
             {menuContent}
           </div>
