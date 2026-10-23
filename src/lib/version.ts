@@ -1,14 +1,15 @@
 import pkg from "../../package.json";
+import buildInfo from "../generated/build-id.json";
 
 /** 表示用バージョン */
 export const APP_VERSION: string = pkg.version;
 
 /**
- * ビルド識別子（next.config.mjs でビルド時刻から生成）。
+ * ビルド識別子（scripts/build-id.mjs がビルド開始時に1回だけ生成）。
+ * クライアントとサーバーで必ず同じ値になる。
  * PWAの更新検知とバージョン表示に使う。
  */
-export const BUILD_ID: string =
-  process.env.NEXT_PUBLIC_BUILD_TIME ?? "dev";
+export const BUILD_ID: string = buildInfo.id || "dev";
 
 /** "v0.4.0 (2026-10-22)" のような表示用文字列 */
 export function versionLabel(): string {
