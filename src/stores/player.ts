@@ -11,6 +11,7 @@ import {
   MAX_BOOST,
   MIN_BOOST,
   resetAiMix,
+  resumeAudioContext,
   startDjMix,
   STUDIO_DEFAULTS,
   studioGraphReady,
@@ -28,6 +29,7 @@ import {
   retireAudioElement,
   swapAudioRoles,
   trackSrc,
+  warmUpSecondaryAudio,
 } from "@/lib/player-audio";
 import { getCachedSpectrogram, findBeatAlignOffset, spectrogramTarget } from "@/lib/spectrogram";
 import { playerLog } from "@/lib/player-log";
@@ -171,6 +173,8 @@ function reportPlayError(error: unknown) {
 }
 
 function playWithRetry(audio: HTMLAudioElement, attempt: number) {
+  // iOSは割り込み後にAudioContextが止まっていると「再生中なのに無音」になる
+  void resumeAudioContext();
   audio.play().catch((error: unknown) => {
     const name = error instanceof Error ? error.name : "";
 
@@ -202,19 +206,26 @@ function playWithRetry(audio: HTMLAudioElement, attempt: number) {
 
 let gestureResumeArmed = false;
 
-/** 次のユーザー操作（タップ）で再生を再開する（iOSの自動再生制限対策） */
+/** 次のユーザー操作（タップ）で AudioContext と再生を再開する（iOSの自動再生制限対策） */
 function armGestureResume() {
   if (gestureResumeArmed || typeof document === "undefined") return;
   gestureResumeArmed = true;
   const resume = () => {
     gestureResumeArmed = false;
+    void resumeAudioContext();
+    warmUpSecondaryAudio();
     if (!usePlayer.getState().isPlaying) return;
     const target = getAudio();
     if (target && target.paused && !target.ended) {
-      target.play().catch(() => {});
+      target.play().catch(() => {
+        // それでも拒否されたら次の操作で再試行
+        armGestureResume();
+      });
     }
   };
-  document.addEventListener("pointerdown", resume, { once: true });
+  document.addEventListener("pointerdown", resume, { once: true, capture: true });
+  document.addEventListener("touchend", resume, { once: true, capture: true });
+  document.addEventListener("click", resume, { once: true, capture: true });
 }
 
 /** 先読み再生（オーバーラップ）を中断して2つ目の要素を止める */
@@ -268,6 +279,11 @@ function ensureStallWatchdog() {
         playerLog("preload stalled, resuming");
         secondary.play().catch(() => cancelOverlap());
       }
+    }
+
+    // 3) AudioContextが止まっている（バックグラウンド復帰など）なら再開を試みる
+    if (usePlayer.getState().isPlaying) {
+      void resumeAudioContext();
     }
 
     const main = getAudio();
@@ -726,13 +742,49 @@ async function extendWithRadio() {
 }
 
 /** 画面復帰・割り込み後に、再生中なら再生を再開する（iOSのジェスチャー制限にも対応） */
+// 画面を離れる直前に再生中だったか（iOSのPWAは復帰時に自動停止していることがある）
+let wasPlayingBeforeHidden = false;
+
+export function noteAppHidden() {
+  wasPlayingBeforeHidden = usePlayer.getState().isPlaying;
+}
+
+/** 画面復帰時、直前まで再生中だったなら自動で再開を試みる */
+export function resumeAfterInterruption() {
+  if (!wasPlayingBeforeHidden) return;
+  const { isPlaying, queue } = usePlayer.getState();
+  if (isPlaying || queue.length === 0) return;
+  const main = getAudio();
+  if (!main || !main.src || main.src.includes("silence.wav")) return;
+  void resumeAudioContext();
+  usePlayer.setState({ isPlaying: true });
+  playWithRetry(main, 0);
+}
+
 export function recoverPlayback() {
   const { isPlaying } = usePlayer.getState();
   if (!isPlaying) return;
+  // iOS: 画面復帰直後はAudioContextが止まっていることがある
+  void resumeAudioContext();
   const main = getAudio();
   if (main && main.paused && !main.ended && main.src && !main.src.includes("silence.wav")) {
     playWithRetry(main, 0);
   }
+  // 復帰直後は再生要求が無視される場合があるため、少し遅らせてもう一度試す
+  window.setTimeout(() => {
+    if (!usePlayer.getState().isPlaying) return;
+    void resumeAudioContext();
+    const target = getAudio();
+    if (
+      target &&
+      target.paused &&
+      !target.ended &&
+      target.src &&
+      !target.src.includes("silence.wav")
+    ) {
+      target.play().catch(() => armGestureResume());
+    }
+  }, 600);
 }
 
 export function handleAudioError(audio: HTMLAudioElement) {

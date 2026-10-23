@@ -37,7 +37,9 @@ import { showToast } from "@/components/ui/toast";
 import {
   getOverlapStartPosition,
   handleAudioError,
+  noteAppHidden,
   recoverPlayback,
+  resumeAfterInterruption,
   usePlayer,
   type EqBand,
 } from "@/stores/player";
@@ -310,6 +312,10 @@ export function PlayerBar() {
     };
     const handlePause = (event: Event) => {
       if (!isMainEvent(event)) return;
+      // バックグラウンド移行による停止なら「復帰時に再開」の対象にする
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        noteAppHidden();
+      }
       // ロック画面・イヤホン操作などの一時停止でも先読みを止める（鳴り続け防止）
       usePlayer.getState().cancelPreload();
       usePlayer.setState({ isPlaying: false });
@@ -355,11 +361,20 @@ export function PlayerBar() {
 
     // 画面復帰・割り込み後は、再生中なら自動でリカバリする
     const handleVisibility = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState === "visible") {
+        recoverPlayback();
+        resumeAfterInterruption();
+      } else {
+        noteAppHidden();
+      }
+    };
+    const handlePageShow = () => {
       recoverPlayback();
+      resumeAfterInterruption();
     };
     document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("pageshow", recoverPlayback);
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("focus", recoverPlayback);
 
     return () => {
       for (const element of elements) {
@@ -372,7 +387,8 @@ export function PlayerBar() {
       }
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("pageshow", recoverPlayback);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("focus", recoverPlayback);
     };
   }, []);
 

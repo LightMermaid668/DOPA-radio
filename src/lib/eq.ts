@@ -58,6 +58,48 @@ let graph: {
 // MediaElementSourceは1要素につき1回だけ作成できるため、接続済み要素を記録する
 const connectedElements = new WeakSet<HTMLAudioElement>();
 
+/**
+ * iOS Safari/PWA はバックグラウンド・画面ロック・電話割り込みなどで
+ * AudioContext を停止させる。停止したまま MediaElementSource を経由すると
+ * 「再生中なのに無音」になるため、ユーザー操作・画面復帰のたびに再開する。
+ */
+let gestureHooksInstalled = false;
+
+export async function resumeAudioContext(): Promise<boolean> {
+  const context = audioContext;
+  if (!context) return true;
+  if (context.state === "running") return true;
+  try {
+    await context.resume();
+  } catch {
+    /* ジェスチャー外では失敗する。次のタップで再試行される */
+  }
+  // resume() 後は型の絞り込みが古いままなので、現在値を読み直す
+  return (context.state as AudioContextState) === "running";
+}
+
+export function audioGraphContextState(): AudioContextState | "none" {
+  return audioContext?.state ?? "none";
+}
+
+function installGestureHooks(): void {
+  if (gestureHooksInstalled || typeof document === "undefined") return;
+  gestureHooksInstalled = true;
+
+  const resume = () => {
+    void resumeAudioContext();
+  };
+  document.addEventListener("pointerdown", resume, { capture: true, passive: true });
+  document.addEventListener("touchend", resume, { capture: true, passive: true });
+  document.addEventListener("click", resume, { capture: true, passive: true });
+  document.addEventListener("keydown", resume, { capture: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resume();
+  });
+  window.addEventListener("pageshow", resume);
+  window.addEventListener("focus", resume);
+}
+
 // 要素ごとのミックスチェーン（AIミックス用: フィルター+ゲイン）
 type MixChain = {
   highpass: BiquadFilterNode;
@@ -130,6 +172,14 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return false;
       audioContext = new Ctor();
+      // 停止→復帰を繰り返すため、操作のたびに再開できるようにしておく
+      installGestureHooks();
+      audioContext.addEventListener("statechange", () => {
+        if (audioContext && audioContext.state !== "running") {
+          // 直後に再開を試みる（成功すればそのまま音が戻る）
+          void resumeAudioContext();
+        }
+      });
     }
 
     if (!graph) {
@@ -242,15 +292,9 @@ export async function ensureEqGraph(audio: HTMLAudioElement): Promise<boolean> {
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
-
-    // iOS Safari: ジェスチャー外から resume できない場合があるため、次のタップで再開を試みる
-    if (audioContext.state !== "running" && typeof document !== "undefined") {
-      const resumeOnGesture = () => {
-        void audioContext?.resume().catch(() => {});
-        document.removeEventListener("pointerdown", resumeOnGesture);
-      };
-      document.addEventListener("pointerdown", resumeOnGesture);
-    }
+    // iOS Safari: ジェスチャー外から resume できない場合があるため、
+    // 以降のタップ/画面復帰で再開できるように常設フックを入れておく
+    installGestureHooks();
     return true;
   } catch (error) {
     console.warn("[eq] failed to build audio graph:", error);
