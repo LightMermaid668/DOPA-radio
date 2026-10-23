@@ -56,10 +56,14 @@ struct LibraryView: View {
                             Label("ダウンロード済み", systemImage: "arrow.down.circle")
                         }
                         if let user = auth.user {
-                            Section(user.email) {
+                            Section {
                                 Button("ログアウト", role: .destructive) {
                                     Task { await auth.signOut() }
                                 }
+                            } header: {
+                                Text(user.email)
+                            } footer: {
+                                Text("DOPA-radio \(appVersionLabel)")
                             }
                         }
                     } label: {

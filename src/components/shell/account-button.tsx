@@ -20,6 +20,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { isDesktopApp } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
+import { versionLabel } from "@/lib/version";
 
 export type ShellUser = {
   id: string;
@@ -195,6 +196,10 @@ export function AccountButton({ user }: { user: ShellUser | null }) {
         </span>
         ログアウト
       </button>
+      <div className="my-1 h-px bg-dopa-800" />
+      <p className="px-3 pb-1 pt-0.5 text-center text-[10px] text-zinc-600">
+        DOPA-radio {versionLabel()}
+      </p>
     </div>
   );
 

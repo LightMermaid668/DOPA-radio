@@ -59,6 +59,14 @@ extension ToolbarItemPlacement {
     }
 }
 
+/// アプリバージョン表示（例: v0.4.0 (2)）
+var appVersionLabel: String {
+    let info = Bundle.main.infoDictionary
+    let version = info?["CFBundleShortVersionString"] as? String ?? "0"
+    let build = info?["CFBundleVersion"] as? String ?? "0"
+    return "v\(version) (\(build))"
+}
+
 func formatDuration(_ seconds: Int?) -> String {
     guard let seconds, seconds > 0 else { return "--:--" }
     let m = seconds / 60

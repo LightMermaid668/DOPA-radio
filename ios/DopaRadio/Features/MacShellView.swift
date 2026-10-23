@@ -116,8 +116,15 @@ struct MacShellView: View {
 /// Macの設定（スタジオDSP設定をそのまま表示）
 struct MacSettingsView: View {
     var body: some View {
-        StudioListContent()
-            .navigationTitle("設定")
+        VStack(spacing: 0) {
+            StudioListContent()
+            Text("DOPA-radio \(appVersionLabel)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+        }
+        .navigationTitle("設定")
     }
 }
 

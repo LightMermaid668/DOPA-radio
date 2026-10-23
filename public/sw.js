@@ -1,7 +1,10 @@
-/* DOPA-radio service worker (Phase 0: installability only) */
-/* Phase 3 でオフラインキャッシュ（アプリシェル・自分のプレイリスト）を追加する */
+/* DOPA-radio service worker
+ * - 更新は常に即時反映（skipWaiting + clients.claim）
+ * - 画面遷移（HTML）はネットワーク優先・HTTPキャッシュ無視
+ * - それ以外はブラウザ標準に任せる（ハッシュ付き静的アセットは不変）
+ */
 
-const CACHE_NAME = "dopa-radio-shell-v3";
+const CACHE_NAME = "dopa-radio-shell-v4";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME));
@@ -19,6 +22,20 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-self.addEventListener("fetch", () => {
-  /* no-op: ネットワークのみ。Phase 3 でキャッシュ戦略を実装 */
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  // 画面遷移は常に最新のHTMLを取りに行く（PWAの古い画面が残るのを防ぐ）
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request, { cache: "no-store" }).catch(() => fetch(request).catch(() => Response.error())),
+    );
+    return;
+  }
+  // それ以外はブラウザ標準のキャッシュ戦略に任せる
 });

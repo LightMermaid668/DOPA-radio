@@ -1,37 +1,16 @@
-import { getSessionCookie } from "better-auth/cookies";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-const PROTECTED_PREFIXES = [
-  "/library",
-  "/upload",
-  "/playlists",
-  "/downloads",
-  "/settings",
-  "/admin",
-];
-
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  const isProtected = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-  if (!isProtected) return NextResponse.next();
-
-  if (getSessionCookie(request)) return NextResponse.next();
-
-  const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("redirect", pathname);
-  return NextResponse.redirect(loginUrl);
+/**
+ * PWAのHTML/RSCをキャッシュさせない（更新が反映されない問題の対策）。
+ * 静的アセットはハッシュ付きで不変なので対象外。
+ */
+export function middleware() {
+  const response = NextResponse.next();
+  response.headers.set("Cache-Control", "no-store, must-revalidate");
+  return response;
 }
 
 export const config = {
-  matcher: [
-    "/library/:path*",
-    "/upload/:path*",
-    "/playlists/:path*",
-    "/downloads/:path*",
-    "/settings/:path*",
-    "/admin/:path*",
-  ],
+  // ページ（HTML/RSC）のみ。/_next/static・画像・API・拡張子付きファイルは除外
+  matcher: ["/((?!_next/static|_next/image|api|icons|.*\\..*).*)"],
 };

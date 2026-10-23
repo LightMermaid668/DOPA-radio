@@ -32,8 +32,8 @@ targets:
       path: DopaRadio/Info.plist
       properties:
         CFBundleDisplayName: DOPA-radio
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.4.0"
+        CFBundleVersion: "2"
         UILaunchScreen: {}
         UIBackgroundModes:
           - audio
@@ -67,8 +67,8 @@ targets:
       properties:
         CFBundleName: DOPA-radio
         CFBundleDisplayName: DOPA-radio
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.4.0"
+        CFBundleVersion: "2"
         LSApplicationCategoryType: public.app-category.music
         ITSAppUsesNonExemptEncryption: false
     settings:

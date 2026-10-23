@@ -11,6 +11,7 @@ import { AccountButton, type ShellUser } from "@/components/shell/account-button
 import { markNavDirection, NAV_ITEMS, navIndexForPath } from "@/components/shell/nav";
 import { isDesktopApp } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
+import { versionLabel } from "@/lib/version";
 
 export function AppShell({
   user,
@@ -120,6 +121,7 @@ export function AppShell({
             <Settings className="size-4" />
             設定
           </Link>
+          <p className="px-3 pt-2 text-[10px] text-zinc-600">DOPA-radio {versionLabel()}</p>
         </div>
       </aside>
 
