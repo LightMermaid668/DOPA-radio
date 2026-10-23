@@ -1,8 +1,10 @@
+import AVFoundation
 import Foundation
 
 /// アップロードの進行状態
 enum UploadPhase: Equatable {
     case idle
+    case compressing(Double)
     case preparing
     case uploading(Double)
     case committing
@@ -16,6 +18,22 @@ final class UploadManager: ObservableObject {
     @Published private(set) var phase: UploadPhase = .idle
     @Published private(set) var fileName: String?
     @Published private(set) var fileSizeBytes: Int64 = 0
+    @Published private(set) var originalSizeBytes: Int64 = 0
+
+    /// 100MB超のときに出す「圧縮するか」確認
+    struct OversizePrompt: Identifiable, Equatable {
+        let id = UUID()
+        let fileName: String
+        let sizeBytes: Int64
+        let bitrate: Int
+        let estimatedBytes: Int64
+        let duration: Double
+    }
+
+    @Published var oversizePrompt: OversizePrompt?
+
+    static let uploadLimitBytes: Int64 = 100 * 1024 * 1024
+    private var pendingOriginalTemp: URL?
 
     @Published var rightsConfirmed = false
     @Published var visibility = "public"
@@ -24,7 +42,7 @@ final class UploadManager: ObservableObject {
 
     var isBusy: Bool {
         switch phase {
-        case .preparing, .uploading, .committing: return true
+        case .preparing, .uploading, .committing, .compressing: return true
         default: return false
         }
     }
@@ -34,33 +52,125 @@ final class UploadManager: ObservableObject {
     }
 
     func reset() {
+        if let pendingOriginalTemp {
+            try? FileManager.default.removeItem(at: pendingOriginalTemp)
+        }
+        pendingOriginalTemp = nil
+        oversizePrompt = nil
         phase = .idle
         fileName = nil
         fileSizeBytes = 0
+        originalSizeBytes = 0
         importedURL = nil
     }
 
     /// ファイルピッカーで選ばれたURLを取り込む（セキュリティスコープ対応）
-    func importFile(_ url: URL) {
-        do {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessed { url.stopAccessingSecurityScopedResource() }
-            }
-            let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("dopa-upload-\(UUID().uuidString)-\(url.lastPathComponent)")
-            try? FileManager.default.removeItem(at: temp)
-            try FileManager.default.copyItem(at: url, to: temp)
-            let attributes = try FileManager.default.attributesOfItem(atPath: temp.path)
-            let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+    /// 100MBを超える場合は圧縮確認（oversizePrompt）を出す
+    func importFile(_ url: URL) async {
+        phase = .preparing
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
 
-            importedURL = temp
-            fileName = url.lastPathComponent
-            fileSizeBytes = size
-            phase = .idle
+        let originalTemp: URL
+        do {
+            originalTemp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("dopa-upload-\(UUID().uuidString)-\(url.lastPathComponent)")
+            try? FileManager.default.removeItem(at: originalTemp)
+            try FileManager.default.copyItem(at: url, to: originalTemp)
         } catch {
             phase = .failed("ファイルを読み込めませんでした")
+            return
         }
+
+        let size =
+            ((try? FileManager.default.attributesOfItem(atPath: originalTemp.path))?[.size] as? NSNumber)?
+            .int64Value ?? 0
+        originalSizeBytes = size
+        fileSizeBytes = size
+        fileName = url.lastPathComponent
+
+        guard size > Self.uploadLimitBytes else {
+            importedURL = originalTemp
+            phase = .idle
+            return
+        }
+
+        // アップロード上限を超えている → 圧縮するか確認
+        let asset = AVURLAsset(url: originalTemp)
+        let duration = (try? await asset.load(.duration).seconds) ?? 0
+        guard duration > 0 else {
+            try? FileManager.default.removeItem(at: originalTemp)
+            phase = .failed("音源の長さを取得できませんでした")
+            return
+        }
+        let bitrate = Self.bitrateToFit(duration: duration)
+        let estimate = AudioCompressor.estimatedBytes(duration: duration, bitrate: bitrate)
+        pendingOriginalTemp = originalTemp
+        oversizePrompt = OversizePrompt(
+            fileName: url.lastPathComponent,
+            sizeBytes: size,
+            bitrate: bitrate,
+            estimatedBytes: estimate,
+            duration: duration
+        )
+        phase = .idle
+    }
+
+    /// 100MB以内に収まる最高ビットレートを選ぶ
+    private static func bitrateToFit(duration: Double) -> Int {
+        let usable = Double(uploadLimitBytes) * 0.95
+        let needed = Int(usable * 8 / max(duration, 1))
+        for candidate in [256_000, 192_000, 128_000, 96_000, 64_000] where candidate <= needed {
+            return candidate
+        }
+        return 64_000
+    }
+
+    func confirmCompression() async {
+        guard let prompt = oversizePrompt, let source = pendingOriginalTemp else { return }
+        oversizePrompt = nil
+        phase = .compressing(0)
+        do {
+            let compressed = try await AudioCompressor.compress(
+                source: source,
+                bitrate: prompt.bitrate
+            ) { [weak self] ratio in
+                Task { @MainActor in
+                    self?.phase = .compressing(ratio)
+                }
+            }
+            let originalName = fileName ?? prompt.fileName
+            let newName = (originalName as NSString).deletingPathExtension + ".m4a"
+            let newSize =
+                ((try? FileManager.default.attributesOfItem(atPath: compressed.path))?[.size] as? NSNumber)?
+                .int64Value ?? 0
+            try? FileManager.default.removeItem(at: source)
+            pendingOriginalTemp = nil
+            importedURL = compressed
+            fileName = newName
+            fileSizeBytes = newSize
+            phase = .idle
+        } catch {
+            try? FileManager.default.removeItem(at: source)
+            pendingOriginalTemp = nil
+            importedURL = nil
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    func cancelCompression() {
+        if let pendingOriginalTemp {
+            try? FileManager.default.removeItem(at: pendingOriginalTemp)
+        }
+        pendingOriginalTemp = nil
+        oversizePrompt = nil
+        importedURL = nil
+        fileName = nil
+        fileSizeBytes = 0
+        originalSizeBytes = 0
+        phase = .idle
     }
 
     func upload() async {

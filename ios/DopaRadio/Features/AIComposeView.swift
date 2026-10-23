@@ -706,6 +706,10 @@ struct AIComposeView: View {
             Text("アップロードを準備中…")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        case .compressing(let ratio):
+            Text("圧縮中 \(Int(ratio * 100))%")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         case .uploading(let ratio):
             VStack(alignment: .leading, spacing: 4) {
                 Text("アップロード中 \(Int(ratio * 100))%")
@@ -926,7 +930,7 @@ struct AIComposeView: View {
 
     private func uploadTrack(_ url: URL) async {
         upload.reset()
-        upload.importFile(url)
+        await upload.importFile(url)
         upload.rightsConfirmed = true
         // ノリノリリミックスは元曲の権利に配慮して限定公開を既定にする
         upload.visibility = url.lastPathComponent.contains("ノリノリ") ? "unlisted" : "public"

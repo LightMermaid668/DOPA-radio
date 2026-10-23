@@ -22,14 +22,27 @@ struct UploadView: View {
                             Text(name)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(2)
-                            Text(formatBytes(manager.fileSizeBytes))
+                            if manager.originalSizeBytes > 0,
+                                manager.originalSizeBytes != manager.fileSizeBytes
+                            {
+                                Text(
+                                    "\(formatBytes(manager.originalSizeBytes)) → \(formatBytes(manager.fileSizeBytes))（圧縮済み）"
+                                )
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DopaColor.accent)
+                            } else {
+                                Text(formatBytes(manager.fileSizeBytes))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     } else {
                         Text("mp3 / m4a / aac / wav / flac / ogg（100MBまで）")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text("100MBを超える場合は圧縮してアップロードできます")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                     Button {
                         showFilePicker = true
@@ -79,6 +92,26 @@ struct UploadView: View {
                         .disabled(manager.isBusy)
                 }
             }
+            .confirmationDialog(
+                "100MBを超えています",
+                isPresented: Binding(
+                    get: { manager.oversizePrompt != nil },
+                    set: { if !$0 { manager.cancelCompression() } }
+                ),
+                titleVisibility: .visible,
+                presenting: manager.oversizePrompt
+            ) { prompt in
+                Button("圧縮してアップロード（\(prompt.bitrate / 1000)kbps）") {
+                    Task { await manager.confirmCompression() }
+                }
+                Button("キャンセル", role: .cancel) {
+                    manager.cancelCompression()
+                }
+            } message: { prompt in
+                Text(
+                    "「\(prompt.fileName)」は\(formatBytes(prompt.sizeBytes))です。約\(formatBytes(prompt.estimatedBytes))に圧縮してアップロードできます。"
+                )
+            }
             .fileImporter(
                 isPresented: $showFilePicker,
                 allowedContentTypes: Self.allowedTypes,
@@ -87,7 +120,7 @@ struct UploadView: View {
                 switch result {
                 case .success(let urls):
                     if let url = urls.first {
-                        manager.importFile(url)
+                        Task { await manager.importFile(url) }
                     }
                 case .failure:
                     break
@@ -120,6 +153,20 @@ struct UploadView: View {
         case .preparing:
             Label("準備中…", systemImage: "hourglass")
                 .foregroundStyle(.secondary)
+        case .compressing(let ratio):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("圧縮中…")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("\(Int((ratio * 100).rounded()))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                ProgressView(value: ratio)
+                    .tint(DopaColor.accent)
+            }
         case .uploading(let ratio):
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
